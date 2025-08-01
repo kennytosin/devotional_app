@@ -103,74 +103,326 @@ Future<List<Devotional>> fetchDevotionals() async {
 }
 
 
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-FlutterLocalNotificationsPlugin();
+class NotificationService {
+  static final FlutterLocalNotificationsPlugin _notifications =
+  FlutterLocalNotificationsPlugin();
 
-Future<void> initializeNotifications() async {
-  // Ensure permissions are handled
-  if (await Permission.notification.isDenied ||
-      await Permission.notification.isRestricted ||
-      await Permission.notification.isPermanentlyDenied) {
-    await Permission.notification.request();
-  }
+  static const String _notificationChannelId = 'daily_devotional_channel';
+  static const String _notificationChannelName = 'Daily Devotional';
+  static const String _notificationChannelDescription =
+      'Daily reminders for devotional reading';
 
-  // Check current permission status
-  final status = await Permission.notification.status;
-  print('🔔 Notification permission status: $status');
+  // Notification ID for daily devotional
+  static const int _dailyNotificationId = 1000;
 
-  // Android settings
-  const AndroidInitializationSettings initializationSettingsAndroid =
-  AndroidInitializationSettings('@mipmap/ic_launcher');
+  // SharedPreferences keys
+  static const String _enabledKey = 'notifications_enabled';
+  static const String _hourKey = 'notification_hour';
+  static const String _minuteKey = 'notification_minute';
 
-  const InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-  );
+  /// Initialize notifications with proper permissions and settings
+  static Future<void> initialize() async {
+    // Initialize timezone
+    tz.initializeTimeZones();
 
-  try {
-    await flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
+    // Android settings
+    const AndroidInitializationSettings androidSettings =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    // iOS settings (if you plan to support iOS)
+    const DarwinInitializationSettings iosSettings =
+    DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
     );
-    print('✅ Notification plugin initialized');
-  } catch (e) {
-    print('❌ Notification plugin failed to initialize: $e');
+
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    try {
+      await _notifications.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: _onNotificationTapped,
+      );
+
+      // Create notification channel for Android
+      await _createNotificationChannel();
+
+      print('✅ Notification service initialized successfully');
+    } catch (e) {
+      print('❌ Failed to initialize notifications: $e');
+    }
   }
 
-  // Initialize timezones
-  tz.initializeTimeZones();
+  /// Create notification channel for Android
+  static Future<void> _createNotificationChannel() async {
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      _notificationChannelId,
+      _notificationChannelName,
+      description: _notificationChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+  }
+
+  /// Handle notification tap
+  static void _onNotificationTapped(NotificationResponse response) {
+    print('Notification tapped: ${response.payload}');
+    // You can navigate to specific page here if needed
+  }
+
+  /// Enable daily notifications at specified time (defaults to 12 AM)
+  static Future<void> enableDailyNotifications({
+    int hour = 0,  // 12 AM (midnight)
+    int minute = 0,
+  }) async {
+    try {
+      // Save settings
+      await _saveNotificationSettings(
+        enabled: true,
+        hour: hour,
+        minute: minute,
+      );
+
+      // Schedule the notification
+      await _scheduleDailyNotification(hour, minute);
+
+      print('✅ Daily notifications enabled at ${_formatTime(hour, minute)}');
+    } catch (e) {
+      print('❌ Failed to enable daily notifications: $e');
+      rethrow;
+    }
+  }
+
+  /// Disable daily notifications
+  static Future<void> disableDailyNotifications() async {
+    try {
+      // Cancel existing notification
+      await _notifications.cancel(_dailyNotificationId);
+
+      // Save settings
+      await _saveNotificationSettings(enabled: false);
+
+      print('✅ Daily notifications disabled');
+    } catch (e) {
+      print('❌ Failed to disable daily notifications: $e');
+      rethrow;
+    }
+  }
+
+  /// Update notification time
+  static Future<void> updateNotificationTime(int hour, int minute) async {
+    try {
+      final isEnabled = await isNotificationsEnabled();
+
+      if (isEnabled) {
+        // Cancel existing and reschedule with new time
+        await _notifications.cancel(_dailyNotificationId);
+        await _scheduleDailyNotification(hour, minute);
+      }
+
+      // Save new time settings
+      await _saveNotificationSettings(
+        enabled: isEnabled,
+        hour: hour,
+        minute: minute,
+      );
+
+      print('✅ Notification time updated to ${_formatTime(hour, minute)}');
+    } catch (e) {
+      print('❌ Failed to update notification time: $e');
+      rethrow;
+    }
+  }
+
+  /// Schedule daily recurring notification
+  static Future<void> _scheduleDailyNotification(int hour, int minute) async {
+    final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+
+    // Calculate next notification time
+    tz.TZDateTime scheduledDate = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+
+    // If the scheduled time is in the past, schedule for tomorrow
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      _notificationChannelId,
+      _notificationChannelName,
+      channelDescription: _notificationChannelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      icon: '@mipmap/ic_launcher',
+      largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
+
+    await _notifications.zonedSchedule(
+      _dailyNotificationId,
+      '📖 Daily Devotional',
+      'Your daily devotional is ready! Tap to read today\'s message 🙏',
+      scheduledDate,
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+      UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time, // This makes it repeat daily
+      payload: 'daily_devotional',
+    );
+
+    print('📅 Next notification scheduled for: $scheduledDate');
+  }
+
+  /// Send a test notification immediately
+  static Future<void> sendTestNotification() async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'test_channel',
+      'Test Notifications',
+      channelDescription: 'Channel for test notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidDetails,
+    );
+
+    try {
+      await _notifications.show(
+        999, // Different ID for test notifications
+        '🧪 Test Notification',
+        'This is a test notification. Your daily reminders will look like this!',
+        notificationDetails,
+        payload: 'test_notification',
+      );
+
+      print('✅ Test notification sent');
+    } catch (e) {
+      print('❌ Failed to send test notification: $e');
+      rethrow;
+    }
+  }
+
+  /// Save notification settings to SharedPreferences
+  static Future<void> _saveNotificationSettings({
+    required bool enabled,
+    int? hour,
+    int? minute,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool(_enabledKey, enabled);
+
+    if (hour != null) {
+      await prefs.setInt(_hourKey, hour);
+    }
+
+    if (minute != null) {
+      await prefs.setInt(_minuteKey, minute);
+    }
+  }
+
+  /// Check if notifications are enabled
+  static Future<bool> isNotificationsEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_enabledKey) ?? false;
+  }
+
+  /// Get saved notification time
+  static Future<TimeOfDay> getNotificationTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hour = prefs.getInt(_hourKey) ?? 0;  // Default to 12 AM
+    final minute = prefs.getInt(_minuteKey) ?? 0;
+
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
+  /// Load and apply saved notification settings (call this on app start)
+  static Future<void> loadAndApplySettings() async {
+    try {
+      final isEnabled = await isNotificationsEnabled();
+
+      if (isEnabled) {
+        final time = await getNotificationTime();
+        await _scheduleDailyNotification(time.hour, time.minute);
+        print('📱 Restored daily notifications at ${_formatTime(time.hour, time.minute)}');
+      }
+    } catch (e) {
+      print('❌ Failed to load notification settings: $e');
+    }
+  }
+
+  /// Get pending notifications (for debugging)
+  static Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    return await _notifications.pendingNotificationRequests();
+  }
+
+  /// Cancel all notifications
+  static Future<void> cancelAllNotifications() async {
+    await _notifications.cancelAll();
+    print('🗑️ All notifications cancelled');
+  }
+
+  /// Format time for display
+  static String _formatTime(int hour, int minute) {
+    final timeOfDay = TimeOfDay(hour: hour, minute: minute);
+    final now = DateTime.now();
+    final dateTime = DateTime(now.year, now.month, now.day, hour, minute);
+
+    // Simple 12-hour format
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final displayMinute = minute.toString().padLeft(2, '0');
+
+    return '$displayHour:$displayMinute $period';
+  }
 }
 
+// Extension to make TimeOfDay formatting easier
+extension TimeOfDayExtension on TimeOfDay {
+  String get formatted {
+    final now = DateTime.now();
+    final dateTime = DateTime(now.year, now.month, now.day, hour, minute);
 
-Future<void> showTestNotification() async {
-  const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-    'test_channel',
-    'Test Notifications',
-    channelDescription: 'Test notifications for app',
-    importance: Importance.max,
-    priority: Priority.high,
-  );
+    final period = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final displayMinute = minute.toString().padLeft(2, '0');
 
-  const NotificationDetails notificationDetails = NotificationDetails(
-    android: androidDetails,
-  );
-
-  try {
-    await flutterLocalNotificationsPlugin.show(
-      0,
-      '📖 Test Notification',
-      'This is a test notification. It works!',
-      notificationDetails,
-    );
-    print('✅ Test notification shown');
-  } catch (e) {
-    print('❌ Failed to show test notification: $e');
+    return '$displayHour:$displayMinute $period';
   }
 }
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeNotifications();
-  tz.initializeTimeZones();
+
+  // Initialize notifications FIRST
+  await NotificationService.initialize();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -181,11 +433,12 @@ void main() async {
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1td3hta2VuanNvamV2aWx5eHl4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwOTkwNTcsImV4cCI6MjA2NzY3NTA1N30.W7uO_wePLk9y8-8nqj3aT9KZFABjFVouiS4ixVFu9Pw',
   );
 
-
+  // Load and apply saved notification settings
+  await NotificationService.loadAndApplySettings();
 
   runApp(
     ScreenUtilInit(
-      designSize: Size(375, 812), // Match your design's width and height
+      designSize: Size(375, 812),
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
@@ -394,167 +647,346 @@ class NotificationSettingsPage extends StatefulWidget {
 
 class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   bool _notificationsEnabled = false;
-  TimeOfDay _notificationTime = const TimeOfDay(hour: 8, minute: 0);
-  final FlutterLocalNotificationsPlugin _notificationsPlugin = flutterLocalNotificationsPlugin;
-
+  TimeOfDay _notificationTime = const TimeOfDay(hour: 0, minute: 0); // Default 12 AM
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
-    tz.initializeTimeZones();
   }
 
-  Future<void> _scheduleTestNotification() async {
-    final date = tz.TZDateTime.now(tz.local).add(const Duration(seconds: 10));
-
-    await _notificationsPlugin.zonedSchedule(
-      2,
-      'Test Reminder',
-      'This is a 10-second test 🔔',
-      date,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'scheduled_channel',
-          'Scheduled Notifications',
-          channelDescription: 'Channel for scheduled tests',
-          importance: Importance.max,
-          priority: Priority.high,
-        ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle, // ✅ updated
-      uiLocalNotificationDateInterpretation:
-      UILocalNotificationDateInterpretation.absoluteTime,
-    );
-
-    print('✅ Scheduled 10-second test notification at $date');
-  }
-
-
+  /// Load current notification settings
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _notificationsEnabled = prefs.getBool('notifications_enabled') ?? false;
-      final hour = prefs.getInt('notification_hour') ?? 8;
-      final minute = prefs.getInt('notification_minute') ?? 0;
-      _notificationTime = TimeOfDay(hour: hour, minute: minute);
-    });
-    if (_notificationsEnabled) {
-      _scheduleNotification();
-    }
-  }
-
-  Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    prefs.setBool('notifications_enabled', _notificationsEnabled);
-    prefs.setInt('notification_hour', _notificationTime.hour);
-    prefs.setInt('notification_minute', _notificationTime.minute);
-  }
-
-  Future<void> _scheduleNotification() async {
-    final now = tz.TZDateTime.now(tz.local);
-
-    final scheduledDate = tz.TZDateTime(
-      tz.local,
-      now.year,
-      now.month,
-      now.day,
-      _notificationTime.hour,
-      _notificationTime.minute,
-    );
-
-    // If the time is in the past, schedule for tomorrow
-    final notificationDate = scheduledDate.isBefore(now)
-        ? scheduledDate.add(const Duration(days: 1))
-        : scheduledDate;
-
-    const androidDetails = AndroidNotificationDetails(
-      'scheduled_channel',
-      'Scheduled Notifications',
-      channelDescription: 'Channel for daily devotional notifications',
-      importance: Importance.max,
-      priority: Priority.high,
-    );
-
-    const notificationDetails = NotificationDetails(android: androidDetails);
-
     try {
-      await _notificationsPlugin.zonedSchedule(
-        1,
-        '📖 Daily Devotion',
-        'Time for your daily devotional 🙏',
-        notificationDate,
-        notificationDetails,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-        UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.time,
-      );
-      print('✅ Scheduled daily notification at $notificationDate');
-    } catch (e, stack) {
-      print('❌ Error scheduling: $e');
-      print(stack);
+      setState(() => _isLoading = true);
+
+      final isEnabled = await NotificationService.isNotificationsEnabled();
+      final time = await NotificationService.getNotificationTime();
+
+      setState(() {
+        _notificationsEnabled = isEnabled;
+        _notificationTime = time;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showErrorSnackBar('Failed to load settings: $e');
     }
-
   }
 
+  /// Toggle notifications on/off
+  Future<void> _toggleNotifications(bool enabled) async {
+    try {
+      setState(() => _notificationsEnabled = enabled);
 
-  Future<void> _cancelNotification() async {
-    await flutterLocalNotificationsPlugin.cancelAll();
-  }
-
-  void _toggleNotifications(bool value) {
-    setState(() {
-      _notificationsEnabled = value;
-    });
-    if (value) {
-      _scheduleNotification();
-    } else {
-      _cancelNotification();
+      if (enabled) {
+        await NotificationService.enableDailyNotifications(
+          hour: _notificationTime.hour,
+          minute: _notificationTime.minute,
+        );
+        _showSuccessSnackBar('Daily notifications enabled at ${_notificationTime.formatted}');
+      } else {
+        await NotificationService.disableDailyNotifications();
+        _showSuccessSnackBar('Daily notifications disabled');
+      }
+    } catch (e) {
+      // Revert the switch if operation failed
+      setState(() => _notificationsEnabled = !enabled);
+      _showErrorSnackBar('Failed to ${enabled ? 'enable' : 'disable'} notifications: $e');
     }
-    _saveSettings();
   }
 
-  void _pickTime() async {
-    final picked = await showTimePicker(
+  /// Pick a new notification time
+  Future<void> _pickNotificationTime() async {
+    final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _notificationTime,
+      helpText: 'Select daily notification time',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            timePickerTheme: TimePickerThemeData(
+              backgroundColor: const Color(0xFF1E1E1E),
+              hourMinuteTextColor: Colors.white,
+              dayPeriodTextColor: Colors.white,
+              dialHandColor: Colors.amber,
+              dialBackgroundColor: Colors.grey[800],
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (picked != null) {
-      setState(() {
-        _notificationTime = picked;
-      });
-      if (_notificationsEnabled) {
-        _scheduleNotification();
+
+    if (picked != null && picked != _notificationTime) {
+      try {
+        setState(() => _notificationTime = picked);
+
+        // Update the notification time
+        await NotificationService.updateNotificationTime(picked.hour, picked.minute);
+
+        if (_notificationsEnabled) {
+          _showSuccessSnackBar('Notification time updated to ${picked.formatted}');
+        } else {
+          _showInfoSnackBar('Time saved. Enable notifications to receive daily reminders.');
+        }
+      } catch (e) {
+        _showErrorSnackBar('Failed to update notification time: $e');
       }
-      _saveSettings();
     }
+  }
+
+  /// Send a test notification
+  Future<void> _sendTestNotification() async {
+    try {
+      await NotificationService.sendTestNotification();
+      _showSuccessSnackBar('Test notification sent! Check your notification panel.');
+    } catch (e) {
+      _showErrorSnackBar('Failed to send test notification: $e');
+    }
+  }
+
+  /// Reset to default time (12 AM)
+  Future<void> _resetToDefault() async {
+    const defaultTime = TimeOfDay(hour: 0, minute: 0);
+
+    try {
+      setState(() => _notificationTime = defaultTime);
+      await NotificationService.updateNotificationTime(0, 0);
+
+      _showSuccessSnackBar('Reset to default time (12:00 AM)');
+    } catch (e) {
+      _showErrorSnackBar('Failed to reset time: $e');
+    }
+  }
+
+  /// Show pending notifications for debugging
+  Future<void> _showPendingNotifications() async {
+    try {
+      final pending = await NotificationService.getPendingNotifications();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: const Text('Pending Notifications', style: TextStyle(color: Colors.white)),
+          content: pending.isEmpty
+              ? const Text('No pending notifications', style: TextStyle(color: Colors.white70))
+              : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: pending.map((notification) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                'ID: ${notification.id}\nTitle: ${notification.title}\nBody: ${notification.body}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            )).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close', style: TextStyle(color: Colors.amber)),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      _showErrorSnackBar('Failed to get pending notifications: $e');
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ $message'),
+        backgroundColor: Colors.green[600],
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ $message'),
+        backgroundColor: Colors.red[600],
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  void _showInfoSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('ℹ️ $message'),
+        backgroundColor: Colors.blue[600],
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Notification Settings")),
-      body: ListView(
+      appBar: AppBar(
+        title: const Text("🔔 Notification Settings"),
+        backgroundColor: Colors.black,
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              switch (value) {
+                case 'reset':
+                  _resetToDefault();
+                  break;
+                case 'debug':
+                  _showPendingNotifications();
+                  break;
+                case 'cancel_all':
+                  NotificationService.cancelAllNotifications();
+                  _showInfoSnackBar('All notifications cancelled');
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'reset', child: Text('Reset to 12 AM')),
+              const PopupMenuItem(value: 'debug', child: Text('Show Pending')),
+              const PopupMenuItem(value: 'cancel_all', child: Text('Cancel All')),
+            ],
+          ),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-
-          ElevatedButton(
-            onPressed: _scheduleTestNotification,
-            child: Text('Schedule 10s Test Notification'),
+          // Enable/Disable Switch
+          Card(
+            color: const Color(0xFF2D2D2D),
+            child: SwitchListTile(
+              title: const Text(
+                'Daily Notifications',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                _notificationsEnabled
+                    ? 'Receive daily devotional reminders'
+                    : 'Notifications are disabled',
+                style: TextStyle(
+                  color: _notificationsEnabled ? Colors.green[300] : Colors.red[300],
+                ),
+              ),
+              value: _notificationsEnabled,
+              onChanged: _toggleNotifications,
+              activeColor: Colors.amber,
+              secondary: Icon(
+                _notificationsEnabled ? Icons.notifications_active : Icons.notifications_off,
+                color: _notificationsEnabled ? Colors.amber : Colors.grey,
+              ),
+            ),
           ),
 
+          const SizedBox(height: 16),
 
-          SwitchListTile(
-            title: const Text("Daily Notification"),
-            value: _notificationsEnabled,
-            onChanged: _toggleNotifications,
+          // Time Picker
+          Card(
+            color: const Color(0xFF2D2D2D),
+            child: ListTile(
+              leading: const Icon(Icons.access_time, color: Colors.amber),
+              title: const Text(
+                'Notification Time',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                _notificationTime.formatted,
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+              onTap: _pickNotificationTime,
+            ),
           ),
-          ListTile(
-            title: const Text("Notification Time"),
-            subtitle: Text(_notificationTime.format(context)),
-            trailing: const Icon(Icons.access_time),
-            onTap: _pickTime,
+
+          const SizedBox(height: 24),
+
+          // Test Notification Button
+          ElevatedButton.icon(
+            onPressed: _sendTestNotification,
+            icon: const Icon(Icons.send),
+            label: const Text('Send Test Notification'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
+
+          const SizedBox(height: 16),
+
+          // Info Card
+          Card(
+            color: Colors.blue[900]?.withOpacity(0.3),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[300]),
+                      const SizedBox(width: 8),
+                      Text(
+                        'How it works',
+                        style: TextStyle(
+                          color: Colors.blue[300],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• Notifications are sent daily at your chosen time\n'
+                        '• Default time is 12:00 AM (midnight)\n'
+                        '• Make sure your device allows notifications\n'
+                        '• Notifications work even when the app is closed',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Current Status
+          if (_notificationsEnabled) ...[
+            const SizedBox(height: 16),
+            Card(
+              color: Colors.green[900]?.withOpacity(0.3),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.green[300]),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Daily reminders active at ${_notificationTime.formatted}',
+                        style: TextStyle(
+                          color: Colors.green[300],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -601,6 +1033,113 @@ class _DailyDevotionalAppState extends State<DailyDevotionalApp> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    // Check and request notification permissions if needed
+    await _checkNotificationPermissions();
+
+    // Set up default notifications if this is first launch
+    await _setupDefaultNotifications();
+  }
+
+  Future<void> _checkNotificationPermissions() async {
+    try {
+      // Request notification permissions (especially important for Android 13+)
+      if (await Permission.notification.isDenied) {
+        final status = await Permission.notification.request();
+        if (status.isDenied && mounted) {
+          // Show dialog explaining why notifications are important
+          _showPermissionDialog();
+        }
+      }
+    } catch (e) {
+      print('❌ Error checking notification permissions: $e');
+    }
+  }
+
+  Future<void> _setupDefaultNotifications() async {
+    try {
+      final isEnabled = await NotificationService.isNotificationsEnabled();
+
+      // If notifications haven't been configured yet, enable them by default at 12 AM
+      if (!isEnabled) {
+        final prefs = await SharedPreferences.getInstance();
+        final hasSetupNotifications = prefs.getBool('has_setup_notifications') ?? false;
+
+        if (!hasSetupNotifications) {
+          // First launch - enable notifications at 12 AM by default
+          await NotificationService.enableDailyNotifications(hour: 0, minute: 0);
+          await prefs.setBool('has_setup_notifications', true);
+
+          print('📱 Default notifications enabled at 12:00 AM for first launch');
+
+          // Show a brief welcome message about notifications if mounted
+          if (mounted) {
+            Future.delayed(const Duration(seconds: 4), () {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("🔔 Daily devotional reminders enabled at 12:00 AM"),
+                    duration: Duration(seconds: 3),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Failed to setup default notifications: $e');
+    }
+  }
+
+  void _showPermissionDialog() {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+            '🔔 Enable Notifications',
+            style: TextStyle(color: Colors.white)
+        ),
+        content: const Text(
+          'Get daily reminders for your devotional reading at 12:00 AM. You can customize the time in settings later.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+                'Maybe Later',
+                style: TextStyle(color: Colors.grey)
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Permission.notification.request();
+              // Try to setup notifications again after permission granted
+              await _setupDefaultNotifications();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+            child: const Text(
+                'Enable',
+                style: TextStyle(color: Colors.black)
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -611,7 +1150,7 @@ class _DailyDevotionalAppState extends State<DailyDevotionalApp> {
         fontFamily: 'Roboto',
         appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
       ),
-      home: Builder( // 👈 This gives us a context *below* MaterialApp
+      home: Builder( // 👈 This gives us a context below MaterialApp
         builder: (innerContext) {
           // 👇 Safe to use ScaffoldMessenger here
           WidgetsBinding.instance.addPostFrameCallback((_) {
