@@ -1,0 +1,63 @@
+name: devotional_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+#  android_intent_plus: ^5.3.1
+
+  # Core Flutter
+  cupertino_icons: ^1.0.8
+
+  # UI and Formatting
+  flutter_screenutil: ^5.9.3
+  intl: ^0.20.2
+  carousel_slider: ^5.1.1
+
+  # Storage and Database
+  path_provider: ^2.1.5
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  shared_preferences: ^2.5.3
+
+  # Backend
+  supabase_flutter: ^2.9.1
+
+  # Connectivity and Permissions
+  connectivity_plus: ^6.1.4
+  permission_handler: ^12.0.1
+
+  # Notifications (keep only timezone, remove flutter_native_timezone)
+  flutter_local_notifications: ^19.4.0
+  timezone: ^0.10.1
+
+  # Remove this line - it conflicts with timezone package:
+  flutter_native_timezone: ^2.0.0
+
+  # Remove this line - package is deprecated and might cause issues:
+  flutter_datetime_picker: ^1.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Comment out assets if they don't exist to prevent build errors
+  # assets:
+  #   - assets/devotion1.jpg
+  #   - assets/devotion2.jpg
+  #   - assets/devotion3.jpg
+  #   - assets/grace.jpg
+  #   - assets/faith.jpg
+  #   - assets/prayer.jpg
+  #   - assets/love.jpg
