@@ -1381,11 +1381,244 @@ class BlurBottomSheet extends StatefulWidget {
   State<BlurBottomSheet> createState() => _BlurBottomSheetState();
 }
 
-class DevotionalsPage extends StatelessWidget {
-  const DevotionalsPage({super.key});
+class CalendarPage extends StatefulWidget {
+  const CalendarPage({super.key});
+
   @override
-  Widget build(BuildContext context) =>
-      Scaffold(appBar: AppBar(title: const Text("Devotionals")));
+  State<CalendarPage> createState() => _CalendarPageState();
+}
+
+class _CalendarPageState extends State<CalendarPage> {
+  List<Devotional> devotionals = [];
+  bool isLoading = true;
+  DateTime selectedDate = DateTime.now();
+  PageController pageController = PageController();
+
+  @override
+  void initState() {
+    super.initState();
+    loadDevotionals();
+  }
+
+  Future<void> loadDevotionals() async {
+    try {
+      final result = await fetchDevotionals();
+      setState(() {
+        devotionals = result;
+        isLoading = false;
+      });
+    } catch (e) {
+      print("Error loading devotionals: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  List<Devotional> getDevotionalsForMonth(DateTime month) {
+    return devotionals.where((devotional) {
+      return devotional.date.year == month.year &&
+          devotional.date.month == month.month;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("📅 Calendar"),
+        backgroundColor: Colors.black,
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : Column(
+        children: [
+          // Month Navigation
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      selectedDate = DateTime(selectedDate.year, selectedDate.month - 1);
+                    });
+                  },
+                  icon: const Icon(Icons.chevron_left, color: Colors.white),
+                ),
+                Text(
+                  DateFormat('MMMM yyyy').format(selectedDate),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      selectedDate = DateTime(selectedDate.year, selectedDate.month + 1);
+                    });
+                  },
+                  icon: const Icon(Icons.chevron_right, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+          // Calendar Grid
+          Expanded(
+            child: _buildCalendarGrid(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarGrid() {
+    final monthDevotionals = getDevotionalsForMonth(selectedDate);
+    final firstDayOfMonth = DateTime(selectedDate.year, selectedDate.month, 1);
+    final lastDayOfMonth = DateTime(selectedDate.year, selectedDate.month + 1, 0);
+    final daysInMonth = lastDayOfMonth.day;
+    final startingWeekday = firstDayOfMonth.weekday % 7;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Week headers
+          Row(
+            children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                .map((day) => Expanded(
+              child: Center(
+                child: Text(
+                  day,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ))
+                .toList(),
+          ),
+          const SizedBox(height: 8),
+          // Calendar days
+          Expanded(
+            child: GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1,
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 4,
+              ),
+              itemCount: 42, // 6 weeks * 7 days
+              itemBuilder: (context, index) {
+                final dayNumber = index - startingWeekday + 1;
+
+                if (dayNumber < 1 || dayNumber > daysInMonth) {
+                  return Container(); // Empty cell
+                }
+
+                final dayDate = DateTime(selectedDate.year, selectedDate.month, dayNumber);
+                final hasDevotional = monthDevotionals.any((d) =>
+                d.date.day == dayNumber &&
+                    d.date.month == selectedDate.month &&
+                    d.date.year == selectedDate.year
+                );
+
+                final devotionalForDay = monthDevotionals.firstWhere(
+                      (d) => d.date.day == dayNumber &&
+                      d.date.month == selectedDate.month &&
+                      d.date.year == selectedDate.year,
+                  orElse: () => Devotional(id: '', title: '', content: '', date: dayDate),
+                );
+
+                final isToday = dayDate.day == DateTime.now().day &&
+                    dayDate.month == DateTime.now().month &&
+                    dayDate.year == DateTime.now().year;
+
+                return GestureDetector(
+                  onTap: hasDevotional ? () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DevotionalDetailPage(devotional: devotionalForDay),
+                      ),
+                    );
+                  } : null,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isToday
+                          ? Colors.amber.withOpacity(0.3)
+                          : hasDevotional
+                          ? Colors.green.withOpacity(0.3)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: isToday ? Border.all(color: Colors.amber, width: 2) : null,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            dayNumber.toString(),
+                            style: TextStyle(
+                              color: hasDevotional ? Colors.white : Colors.white54,
+                              fontWeight: hasDevotional ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          if (hasDevotional)
+                            const Icon(
+                              Icons.circle,
+                              size: 6,
+                              color: Colors.green,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // Legend
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildLegendItem(Colors.amber, "Today"),
+                _buildLegendItem(Colors.green, "Has Devotional"),
+                _buildLegendItem(Colors.grey, "No Devotional"),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(2),
+            border: color == Colors.amber ? Border.all(color: color, width: 1) : null,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+      ],
+    );
+  }
 }
 
 class FavoritesPage extends StatelessWidget {
@@ -1496,11 +1729,390 @@ class _AddDevotionalPageState extends State<AddDevotionalPage> {
   }
 }
 
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+
+class HelpPage extends StatelessWidget {
+  const HelpPage({super.key});
+
   @override
-  Widget build(BuildContext context) =>
-      Scaffold(appBar: AppBar(title: const Text("Settings")));
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("❓ Help & FAQ"),
+        backgroundColor: Colors.black,
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildHelpSection(
+            "Getting Started",
+            [
+              _buildFAQItem(
+                "How do I read today's devotional?",
+                "The featured devotional card on the home page shows today's message. "
+                    "Tap on it to read the full content.",
+              ),
+              _buildFAQItem(
+                "How do I enable notifications?",
+                "Go to Settings > Notifications and toggle on 'Daily Notifications'. "
+                    "You can also set your preferred time for reminders.",
+              ),
+            ],
+          ),
+
+          _buildHelpSection(
+            "Navigation",
+            [
+              _buildFAQItem(
+                "How do I access different features?",
+                "Tap the floating action button (⊕) in the center of the bottom bar "
+                    "to access Calendar, About, Add devotional, and Help pages.",
+              ),
+              _buildFAQItem(
+                "How do I view past devotionals?",
+                "Use the Archive section to browse all previous devotionals, "
+                    "or use the Calendar to view devotionals by specific dates.",
+              ),
+            ],
+          ),
+
+          _buildHelpSection(
+            "Downloads & Offline Reading",
+            [
+              _buildFAQItem(
+                "How do I download devotionals?",
+                "Open any devotional and tap the download icon in the top-right corner. "
+                    "Downloaded devotionals can be accessed offline.",
+              ),
+              _buildFAQItem(
+                "Where can I find my downloads?",
+                "Tap on 'Downloads' from the home page categories to see all "
+                    "your offline devotionals.",
+              ),
+            ],
+          ),
+
+          _buildHelpSection(
+            "Search & Organization",
+            [
+              _buildFAQItem(
+                "How do I search for specific devotionals?",
+                "In the Archive page, use the search bar to find devotionals by title "
+                    "or content, and use the date picker to filter by specific dates.",
+              ),
+              _buildFAQItem(
+                "How do I sort devotionals?",
+                "In the Archive page, tap the sort button to arrange devotionals "
+                    "by date (newest first, oldest first) or alphabetically.",
+              ),
+            ],
+          ),
+
+          _buildHelpSection(
+            "Notifications",
+            [
+              _buildFAQItem(
+                "I'm not receiving notifications. What should I do?",
+                "1. Check that notifications are enabled in the app settings\n"
+                    "2. Ensure your device allows notifications for this app\n"
+                    "3. Check your device's Do Not Disturb settings\n"
+                    "4. Try sending a test notification from the settings page",
+              ),
+              _buildFAQItem(
+                "How do I change the notification time?",
+                "Go to Settings > Notifications and tap on 'Notification Time' "
+                    "to select your preferred reminder time.",
+              ),
+            ],
+          ),
+
+          _buildHelpSection(
+            "Troubleshooting",
+            [
+              _buildFAQItem(
+                "The app is running slowly. What can I do?",
+                "Try refreshing the content using the refresh button on the home page. "
+                    "If issues persist, restart the app.",
+              ),
+              _buildFAQItem(
+                "I can't connect to load new devotionals.",
+                "Check your internet connection. The app shows your connection status "
+                    "in the top-right corner of the home page.",
+              ),
+              _buildFAQItem(
+                "How do I report a bug or issue?",
+                "Please contact our support team at support@nkcdevotional.com "
+                    "with details about the issue you're experiencing.",
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Contact Support Card
+          Card(
+            color: Colors.blue.withOpacity(0.1),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Icon(Icons.support_agent, color: Colors.blue, size: 48),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "Need More Help?",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Can't find what you're looking for? Our support team is here to help!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      // You could implement email launching here
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text("Contact: support@nkcdevotional.com"),
+                          backgroundColor: Colors.blue,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.email),
+                    label: const Text("Contact Support"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHelpSection(String title, List<Widget> items) {
+    return Card(
+      color: const Color(0xFF2D2D2D),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.amber,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...items,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFAQItem(String question, String answer) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            answer,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.white70,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class AboutPage extends StatelessWidget {
+  const AboutPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("ℹ️ About"),
+        backgroundColor: Colors.black,
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // App Logo/Header
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.menu_book,
+                  size: 80,
+                  color: Colors.amber,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // App Name and Version
+            const Center(
+              child: Column(
+                children: [
+                  Text(
+                    "NKC DEVOTIONAL",
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    "Version 1.0.0",
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            // Description
+            _buildSection(
+              "About This App",
+              "NKC Devotional is your daily companion for spiritual growth and reflection. "
+                  "Get inspired with daily devotional messages, manage your spiritual journey, "
+                  "and stay connected with God through our carefully curated content.",
+              Icons.info_outline,
+            ),
+
+            const SizedBox(height: 24),
+
+            // Features
+            _buildSection(
+              "Features",
+              "• Daily devotional messages\n"
+                  "• Offline reading capability\n"
+                  "• Search and archive functionality\n"
+                  "• Calendar view of devotionals\n"
+                  "• Daily notifications\n"
+                  "• Download for offline access",
+              Icons.star,
+            ),
+
+            const SizedBox(height: 24),
+
+            // Contact/Support
+            _buildSection(
+              "Contact & Support",
+              "For questions, feedback, or support, please reach out to us:\n\n"
+                  "Email: support@nkcdevotional.com\n"
+                  "Website: www.nkcdevotional.com\n\n"
+                  "We'd love to hear from you!",
+              Icons.contact_support,
+            ),
+
+            const SizedBox(height: 24),
+
+            // Credits
+            _buildSection(
+              "Acknowledgments",
+              "We thank God for His grace and guidance in creating this app. "
+                  "Special thanks to all contributors and the community for their support.",
+              Icons.favorite,
+            ),
+
+            const SizedBox(height: 32),
+
+            // Copyright
+            const Center(
+              child: Text(
+                "© 2024 NKC Devotional\nAll rights reserved",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection(String title, String content, IconData icon) {
+    return Card(
+      color: const Color(0xFF2D2D2D),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: Colors.amber, size: 24),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              content,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _BlurBottomSheetState extends State<BlurBottomSheet>
@@ -1630,27 +2242,27 @@ class _BlurBottomSheetState extends State<BlurBottomSheet>
                   crossAxisSpacing: 16,
                   children: [
                     _MenuItem(
-                      icon: Icons.auto_stories,
-                      label: "Devotionals",
+                      icon: Icons.calendar_month,
+                      label: "Calendar",
                       iconColor: Colors.deepOrange,
                       onTap: () {
                         widget.onDismiss();
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const DevotionalsPage(),
+                            builder: (_) => const CalendarPage(),
                           ),
                         );
                       },
                     ),
                     _MenuItem(
-                      icon: Icons.favorite,
-                      label: "Favorites",
+                      icon: Icons.info_outline,
+                      label: "About",
                       iconColor: Colors.pink,
                       onTap: () {
                         widget.onDismiss();
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const FavoritesPage(),
+                            builder: (_) => const AboutPage(),
                           ),
                         );
                       },
@@ -1664,14 +2276,14 @@ class _BlurBottomSheetState extends State<BlurBottomSheet>
                       },
                     ),
                     _MenuItem(
-                      icon: Icons.settings,
-                      label: "Settings",
+                      icon: Icons.help_outline,
+                      label: "Help",
                       iconColor: Colors.green,
                       onTap: () {
                         widget.onDismiss();
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const SettingsPage(),
+                            builder: (_) => const HelpPage(),
                           ),
                         );
                       },
@@ -2187,6 +2799,7 @@ class InfoCardWidget extends StatelessWidget {
   }
 }
 
+
 class ArchivePage extends StatefulWidget {
   const ArchivePage({super.key});
 
@@ -2196,107 +2809,528 @@ class ArchivePage extends StatefulWidget {
 
 class _ArchivePageState extends State<ArchivePage> {
   List<Devotional> archiveDevotionals = [];
+  List<Devotional> filteredDevotionals = [];
   bool isLoading = true;
+  String searchQuery = '';
+  DateTime? selectedDate;
+  String sortOrder = 'newest'; // 'newest', 'oldest', 'alphabetical'
+
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     loadArchiveDevotionals();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      searchQuery = _searchController.text;
+      _applyFiltersAndSort();
+    });
   }
 
   Future<void> loadArchiveDevotionals() async {
     try {
       final result = await fetchDevotionals();
-
-      print("✅ Loaded devotionals: ${result.length}");
-      for (final d in result) {
-        print("${d.title} - ${d.date}");
-      }
-
       setState(() {
         archiveDevotionals = result;
+        filteredDevotionals = result;
         isLoading = false;
       });
+      _applyFiltersAndSort();
     } catch (e) {
       print("❌ Error loading archive: $e");
       setState(() => isLoading = false);
     }
   }
 
+  void _applyFiltersAndSort() {
+    List<Devotional> filtered = List.from(archiveDevotionals);
+
+    // Apply search filter
+    if (searchQuery.isNotEmpty) {
+      filtered = filtered.where((devotional) {
+        return devotional.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
+            devotional.content.toLowerCase().contains(searchQuery.toLowerCase());
+      }).toList();
+    }
+
+    // Apply date filter
+    if (selectedDate != null) {
+      filtered = filtered.where((devotional) {
+        return devotional.date.year == selectedDate!.year &&
+            devotional.date.month == selectedDate!.month &&
+            devotional.date.day == selectedDate!.day;
+      }).toList();
+    }
+
+    // Apply sorting
+    switch (sortOrder) {
+      case 'newest':
+        filtered.sort((a, b) => b.date.compareTo(a.date));
+        break;
+      case 'oldest':
+        filtered.sort((a, b) => a.date.compareTo(b.date));
+        break;
+      case 'alphabetical':
+        filtered.sort((a, b) => a.title.compareTo(b.title));
+        break;
+    }
+
+    setState(() {
+      filteredDevotionals = filtered;
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.amber,
+              onPrimary: Colors.black,
+              surface: Color(0xFF1E1E1E),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        selectedDate = picked;
+        _applyFiltersAndSort();
+      });
+    }
+  }
+
+  void _clearDateFilter() {
+    setState(() {
+      selectedDate = null;
+      _applyFiltersAndSort();
+    });
+  }
+
+  void _showSortOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Sort By',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Icon(
+                Icons.arrow_downward,
+                color: sortOrder == 'newest' ? Colors.amber : Colors.white70,
+              ),
+              title: const Text('Newest First', style: TextStyle(color: Colors.white)),
+              trailing: sortOrder == 'newest'
+                  ? const Icon(Icons.check, color: Colors.amber)
+                  : null,
+              onTap: () {
+                setState(() {
+                  sortOrder = 'newest';
+                  _applyFiltersAndSort();
+                });
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.arrow_upward,
+                color: sortOrder == 'oldest' ? Colors.amber : Colors.white70,
+              ),
+              title: const Text('Oldest First', style: TextStyle(color: Colors.white)),
+              trailing: sortOrder == 'oldest'
+                  ? const Icon(Icons.check, color: Colors.amber)
+                  : null,
+              onTap: () {
+                setState(() {
+                  sortOrder = 'oldest';
+                  _applyFiltersAndSort();
+                });
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.sort_by_alpha,
+                color: sortOrder == 'alphabetical' ? Colors.amber : Colors.white70,
+              ),
+              title: const Text('Alphabetical', style: TextStyle(color: Colors.white)),
+              trailing: sortOrder == 'alphabetical'
+                  ? const Icon(Icons.check, color: Colors.amber)
+                  : null,
+              onTap: () {
+                setState(() {
+                  sortOrder = 'alphabetical';
+                  _applyFiltersAndSort();
+                });
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Devotional Archive")),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : archiveDevotionals.isEmpty
-          ? const Center(child: Text("No devotionals available."))
-          : ListView.separated(
-        padding: const EdgeInsets.all(16),
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemCount: archiveDevotionals.length,
-        itemBuilder: (context, index) {
-          final devotional = archiveDevotionals[index];
-          return GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => DevotionalDetailPage(devotional: devotional),
-                ),
-              );
+      appBar: AppBar(
+        title: const Text("📚 Devotional Archive"),
+        backgroundColor: Colors.black,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sort),
+            onPressed: _showSortOptions,
+            tooltip: 'Sort Options',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              setState(() => isLoading = true);
+              await loadArchiveDevotionals();
             },
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  )
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: Column(
+        children: [
+          // Search and Filter Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: const Color(0xFF2D2D2D),
+            child: Column(
+              children: [
+                // Search Bar
+                TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search devotionals...',
+                    hintStyle: const TextStyle(color: Colors.white54),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                    suffixIcon: searchQuery.isNotEmpty
+                        ? IconButton(
+                      icon: const Icon(Icons.clear, color: Colors.white54),
+                      onPressed: () {
+                        _searchController.clear();
+                      },
+                    )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFF1E1E1E),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  style: const TextStyle(color: Colors.white),
+                ),
+                const SizedBox(height: 12),
+
+                // Date Filter Row
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _pickDate,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(12),
+                            border: selectedDate != null
+                                ? Border.all(color: Colors.amber, width: 1)
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today,
+                                color: selectedDate != null ? Colors.amber : Colors.white54,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                selectedDate != null
+                                    ? DateFormat('MMM dd, yyyy').format(selectedDate!)
+                                    : 'Filter by date',
+                                style: TextStyle(
+                                  color: selectedDate != null ? Colors.amber : Colors.white54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (selectedDate != null) ...[
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: _clearDateFilter,
+                        icon: const Icon(Icons.clear, color: Colors.amber),
+                        tooltip: 'Clear date filter',
+                      ),
+                    ],
+                  ],
+                ),
+
+                // Results Count and Sort Info
+                if (!isLoading) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${filteredDevotionals.length} result${filteredDevotionals.length != 1 ? 's' : ''}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      Text(
+                        'Sorted by: ${_getSortDisplayName()}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ],
+                  ),
                 ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    DateFormat('yyyy-MM-dd').format(devotional.date),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.white54,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    devotional.title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      color: Colors.amber,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    devotional.content.length > 100
-                        ? "${devotional.content.substring(0, 100)}..."
-                        : devotional.content,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          );
-        },
+          ),
+
+          // Results List
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+                : filteredDevotionals.isEmpty
+                ? _buildEmptyState()
+                : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: filteredDevotionals.length,
+              itemBuilder: (context, index) {
+                final devotional = filteredDevotionals[index];
+                return _buildDevotionalCard(devotional);
+              },
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            searchQuery.isNotEmpty || selectedDate != null
+                ? Icons.search_off
+                : Icons.auto_stories,
+            size: 64,
+            color: Colors.white38,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            searchQuery.isNotEmpty || selectedDate != null
+                ? 'No devotionals found'
+                : 'No devotionals available',
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (searchQuery.isNotEmpty || selectedDate != null)
+            Text(
+              'Try adjusting your search or date filter',
+              style: const TextStyle(
+                color: Colors.white38,
+                fontSize: 14,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDevotionalCard(Devotional devotional) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DevotionalDetailPage(devotional: devotional),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2D2D2D),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Date and actions row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    DateFormat('MMM dd, yyyy').format(devotional.date),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.amber,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                // Highlight search matches
+                if (searchQuery.isNotEmpty && _isToday(devotional.date))
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'TODAY',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Title with search highlighting
+            Text(
+              devotional.title,
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Content preview with search highlighting
+            Text(
+              devotional.content.length > 150
+                  ? "${devotional.content.substring(0, 150)}..."
+                  : devotional.content,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.white70,
+                height: 1.4,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Read more indicator
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${devotional.content.split(' ').length} words',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.white38,
+                  ),
+                ),
+                const Row(
+                  children: [
+                    Text(
+                      'Read more',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.amber,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(
+                      Icons.arrow_forward,
+                      size: 14,
+                      color: Colors.amber,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getSortDisplayName() {
+    switch (sortOrder) {
+      case 'newest':
+        return 'Newest First';
+      case 'oldest':
+        return 'Oldest First';
+      case 'alphabetical':
+        return 'Alphabetical';
+      default:
+        return 'Newest First';
+    }
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
   }
 }
 
