@@ -103,6 +103,682 @@ Future<List<Devotional>> fetchDevotionals() async {
 }
 
 
+// Add these new authentication pages to your Flutter app
+
+class AuthPage extends StatefulWidget {
+  const AuthPage({super.key});
+
+  @override
+  State<AuthPage> createState() => _AuthPageState();
+}
+
+class _AuthPageState extends State<AuthPage> with TickerProviderStateMixin {
+  bool isLogin = true;
+  late AnimationController _backgroundController;
+  late AnimationController _formController;
+  late Animation<double> _fadeAnimation;
+
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _usernameController = TextEditingController();
+
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _backgroundController = AnimationController(
+      duration: const Duration(seconds: 20),
+      vsync: this,
+    )..repeat();
+
+    _formController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _formController,
+      curve: Curves.easeInOut,
+    ));
+
+    _formController.forward();
+  }
+
+  @override
+  void dispose() {
+    _backgroundController.dispose();
+    _formController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _usernameController.dispose();
+    super.dispose();
+  }
+
+  void _toggleAuthMode() {
+    setState(() {
+      isLogin = !isLogin;
+    });
+
+    _formController.reset();
+    _formController.forward();
+  }
+
+  Future<void> _handleEmailAuth() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Add your email authentication logic here
+      await Future.delayed(const Duration(seconds: 2)); // Simulate API call
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isLogin ? 'Login successful!' : 'Account created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Navigate to main app
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DailyDevotionalApp()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleGoogleAuth() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Add your Google authentication logic here
+      await Future.delayed(const Duration(seconds: 2)); // Simulate API call
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google authentication successful!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Navigate to main app
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const DailyDevotionalApp()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google auth error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Animated Background
+          _buildAnimatedBackground(),
+
+          // Main Content
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 40),
+
+                      // App Logo/Title
+                      _buildAppTitle(),
+
+                      const SizedBox(height: 60),
+
+                      // Glass Card
+                      _buildGlassCard(),
+
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Loading Overlay
+          if (_isLoading) _buildLoadingOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedBackground() {
+    return AnimatedBuilder(
+      animation: _backgroundController,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF2D1B69),
+                const Color(0xFF11092D),
+              ],
+            ),
+          ),
+          child: Stack(
+            children: [
+              // Moving circles
+              ...List.generate(6, (index) {
+                final double animationOffset = (_backgroundController.value * 2 * pi) + (index * pi / 3);
+                final double size = 80 + (index * 40).toDouble();
+                final double moveX = sin(animationOffset) * 30;
+                final double moveY = cos(animationOffset * 0.7) * 20;
+
+                return Positioned(
+                  left: (index * 80).toDouble() + moveX,
+                  top: (index * 120).toDouble() + moveY,
+                  child: Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          _getOrangeColor(index).withOpacity(0.4),
+                          _getOrangeColor(index).withOpacity(0.1),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+
+              // Additional floating elements
+              ...List.generate(4, (index) {
+                final double animationOffset = (_backgroundController.value * -1.5 * pi) + (index * pi / 2);
+                final double moveX = cos(animationOffset) * 50;
+                final double moveY = sin(animationOffset * 1.2) * 30;
+
+                return Positioned(
+                  right: (index * 100).toDouble() + moveX,
+                  bottom: (index * 150).toDouble() + moveY,
+                  child: Container(
+                    width: 60 + (index * 20).toDouble(),
+                    height: 60 + (index * 20).toDouble(),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Colors.amber.withOpacity(0.3),
+                          Colors.orange.withOpacity(0.2),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getOrangeColor(int index) {
+    final colors = [
+      Colors.deepOrange,
+      Colors.orange,
+      Colors.amber,
+      const Color(0xFFFF6B35),
+      const Color(0xFFFF8C42),
+      const Color(0xFFFFA552),
+    ];
+    return colors[index % colors.length];
+  }
+
+  Widget _buildAppTitle() {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [
+                Colors.orange.withOpacity(0.3),
+                Colors.amber.withOpacity(0.2),
+              ],
+            ),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: const Icon(
+            Icons.menu_book,
+            size: 40,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'NKC DEVOTIONAL',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Your Daily Spiritual Companion',
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.white.withOpacity(0.8),
+            fontWeight: FontWeight.w300,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlassCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.2),
+                Colors.white.withOpacity(0.1),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title
+              Text(
+                isLogin ? 'Welcome Back' : 'Create Account',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Form Fields
+              if (!isLogin) ...[
+                _buildGlassTextField(
+                  controller: _usernameController,
+                  hint: 'Username',
+                  icon: Icons.person,
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              _buildGlassTextField(
+                controller: _emailController,
+                hint: 'Email address',
+                icon: Icons.email,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 16),
+
+              _buildGlassTextField(
+                controller: _passwordController,
+                hint: 'Password',
+                icon: Icons.lock,
+                isPassword: true,
+                isVisible: _isPasswordVisible,
+                onVisibilityToggle: () {
+                  setState(() {
+                    _isPasswordVisible = !_isPasswordVisible;
+                  });
+                },
+              ),
+
+              if (!isLogin) ...[
+                const SizedBox(height: 16),
+                _buildGlassTextField(
+                  controller: _confirmPasswordController,
+                  hint: 'Confirm password',
+                  icon: Icons.lock_outline,
+                  isPassword: true,
+                  isVisible: _isConfirmPasswordVisible,
+                  onVisibilityToggle: () {
+                    setState(() {
+                      _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+                    });
+                  },
+                ),
+              ],
+
+              if (isLogin) ...[
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      // Handle forgot password
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Forgot password feature coming soon!'),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Forgot Password?',
+                      style: TextStyle(
+                        color: Colors.orange.shade300,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+
+              // Email Auth Button
+              _buildAuthButton(
+                onPressed: _handleEmailAuth,
+                label: isLogin ? 'Login' : 'Sign Up',
+                isPrimary: true,
+              ),
+
+              const SizedBox(height: 16),
+
+              // Divider
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Google Auth Button
+              _buildSocialButton(
+                onPressed: _handleGoogleAuth,
+                icon: Icons.g_mobiledata, // You can replace with Google logo
+                label: 'Continue with Google',
+                color: Colors.white,
+              ),
+
+              const SizedBox(height: 24),
+
+              // Toggle Auth Mode
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    isLogin ? "Don't have an account? " : 'Already have an account? ',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _toggleAuthMode,
+                    child: Text(
+                      isLogin ? 'Sign Up' : 'Login',
+                      style: TextStyle(
+                        color: Colors.orange.shade300,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassTextField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    bool isPassword = false,
+    bool isVisible = false,
+    VoidCallback? onVisibilityToggle,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withOpacity(0.15),
+                Colors.white.withOpacity(0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: TextField(
+            controller: controller,
+            obscureText: isPassword && !isVisible,
+            keyboardType: keyboardType,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+              ),
+              prefixIcon: Icon(
+                icon,
+                color: Colors.white.withOpacity(0.8),
+              ),
+              suffixIcon: isPassword
+                  ? IconButton(
+                onPressed: onVisibilityToggle,
+                icon: Icon(
+                  isVisible ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.white.withOpacity(0.8),
+                ),
+              )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuthButton({
+    required VoidCallback onPressed,
+    required String label,
+    bool isPrimary = false,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isPrimary
+              ? Colors.orange.shade600
+              : Colors.transparent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: isPrimary
+                ? BorderSide.none
+                : BorderSide(color: Colors.white.withOpacity(0.3)),
+          ),
+        ),
+        child: _isLoading
+            ? const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        )
+            : Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withOpacity(0.15),
+                  Colors.white.withOpacity(0.05),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
+            ),
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : onPressed,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                foregroundColor: color,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: Icon(icon, size: 24),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.3),
+      child: const Center(
+        child: CircularProgressIndicator(
+          color: Colors.orange,
+        ),
+      ),
+    );
+  }
+}
+
+
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notifications =
   FlutterLocalNotificationsPlugin();
@@ -435,11 +1111,11 @@ void main() async {
 
   runApp(
     ScreenUtilInit(
-      designSize: Size(375, 812),
+      designSize: const Size(375, 812),
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return const DailyDevotionalApp();
+        return const DevotionalApp(); // New root app widget
       },
     ),
   );
@@ -590,6 +1266,29 @@ class DevotionalDatabase {
   }
 }
 
+
+class DevotionalApp extends StatelessWidget {
+  const DevotionalApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'NKC Devotional',
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xff262626),
+        primarySwatch: Colors.amber,
+        fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
+      ),
+      // Start with authentication page
+      home: const AuthPage(),
+    );
+  }
+}
+
+
 class DailyDevotionalApp extends StatefulWidget {
   const DailyDevotionalApp({super.key});
 
@@ -607,7 +1306,7 @@ class MorePage extends StatelessWidget {
       {"title": "Payment Plans", "icon": Icons.payment, "page": const PaymentPlansPage()},
       {"title": "Update", "icon": Icons.system_update, "page": const UpdatePage()},
       {"title": "Notifications", "icon": Icons.notifications, "page": const NotificationSettingsPage()},
-      {"title": "Login/Logout", "icon": Icons.login, "page": const LoginLogoutPage()},
+      {"title": "Logout", "icon": Icons.logout, "page": null}, // Special handling for logout
     ];
 
 
@@ -623,10 +1322,44 @@ class MorePage extends StatelessWidget {
             title: Text(item["title"] as String),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => item["page"] as Widget),
-              );
+              if (item["title"] == "Logout") {
+                // Handle logout
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    backgroundColor: const Color(0xFF1E1E1E),
+                    title: const Text('Logout', style: TextStyle(color: Colors.white)),
+                    content: const Text(
+                      'Are you sure you want to logout?',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Navigate back to auth page
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AuthPage()),
+                                (route) => false,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                        child: const Text('Logout', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => item["page"] as Widget),
+                );
+              }
             },
           );
         },
