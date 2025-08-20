@@ -17,6 +17,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:path/path.dart' as p;
+import 'package:http/http.dart' as http;
 
 // ------------------------- DEVOTIONAL MODEL -------------------------
 class Devotional {
@@ -1109,13 +1113,16 @@ void main() async {
   // Load and apply saved notification settings
   await NotificationService.loadAndApplySettings();
 
+  // 🔥 Initialize Bible Database Service
+  await BibleDatabaseService.initialize();
+
   runApp(
     ScreenUtilInit(
       designSize: const Size(375, 812),
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return const DevotionalApp(); // New root app widget
+        return const DevotionalApp();
       },
     ),
   );
@@ -4076,12 +4083,6 @@ class FavouritesPage extends StatelessWidget {
       Scaffold(appBar: AppBar(title: const Text("Favourites")));
 }
 
-class BiblePage extends StatelessWidget {
-  const BiblePage({super.key});
-  @override
-  Widget build(BuildContext context) =>
-      Scaffold(appBar: AppBar(title: const Text("Bible")));
-}
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key});
@@ -4146,4 +4147,2069 @@ class _DownloadsPageState extends State<DownloadsPage> {
       ),
     );
   }
+}
+
+
+class BiblePage extends StatefulWidget {
+  const BiblePage({super.key});
+
+  @override
+  State<BiblePage> createState() => _BiblePageState();
+}
+
+class _BiblePageState extends State<BiblePage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  List<BibleBook> books = [];
+  bool isLoading = true;
+  bool isDatabaseAvailable = false;
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _initializeBible();
+  }
+
+  Future<void> _initializeBible() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final db = await BibleDatabaseService.database;
+      if (db != null) {
+        final booksList = await BibleDatabaseService.getBooks();
+        setState(() {
+          books = booksList;
+          isDatabaseAvailable = booksList.isNotEmpty;
+          isLoading = false;
+        });
+
+        if (booksList.isEmpty) {
+          setState(() {
+            errorMessage = 'Database is empty or has an unsupported format';
+          });
+        }
+
+        // Debug info
+        final info = await BibleDatabaseService.getDatabaseInfo();
+        print('📖 Bible Database Info: $info');
+      } else {
+        setState(() {
+          isDatabaseAvailable = false;
+          isLoading = false;
+          errorMessage = 'No Bible translations found';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        isDatabaseAvailable = false;
+        isLoading = false;
+        errorMessage = 'Error loading Bible: $e';
+      });
+      print('❌ Error initializing Bible: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('📖 ${BibleDatabaseService.currentTranslation} Bible'),
+        backgroundColor: Colors.black,
+        bottom: isDatabaseAvailable
+            ? TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.amber,
+          tabs: const [
+            Tab(text: 'Books'),
+            Tab(text: 'Search'),
+            Tab(text: 'Settings'),
+          ],
+        )
+            : null,
+        actions: [
+          if (isDatabaseAvailable)
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _initializeBible,
+              tooltip: 'Refresh',
+            ),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : !isDatabaseAvailable
+          ? _buildDownloadPrompt()
+          : TabBarView(
+        controller: _tabController,
+        children: [
+          _buildBooksTab(),
+          const BibleSearchWidget(),
+          const BibleSettingsWidget(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDownloadPrompt() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.download_rounded,
+              size: 80,
+              color: Colors.amber,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              errorMessage ?? 'Bible Not Available',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              errorMessage != null
+                  ? 'There was an issue loading the Bible database. Try downloading a translation below.'
+                  : 'Download a Bible translation to start reading offline.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BibleDownloadPage()),
+                );
+                // Refresh when returning from download page
+                if (result == true || result == null) {
+                  _initializeBible();
+                }
+              },
+              icon: const Icon(Icons.download),
+              label: const Text('Download Bible Translations'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: _initializeBible,
+                child: const Text(
+                  'Try Again',
+                  style: TextStyle(color: Colors.amber),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBooksTab() {
+    if (books.isEmpty) {
+      return const Center(
+        child: Text(
+          'No books found in current translation',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: books.length,
+      itemBuilder: (context, index) {
+        final book = books[index];
+        return Card(
+          color: const Color(0xFF2D2D2D),
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Colors.amber,
+              child: Text(
+                '${book.id}',
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            title: Text(
+              book.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BibleBookPage(book: book),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+}
+
+// ------------------------- BIBLE BOOK PAGE -------------------------
+class BibleBookPage extends StatefulWidget {
+  final BibleBook book;
+
+  const BibleBookPage({super.key, required this.book});
+
+  @override
+  State<BibleBookPage> createState() => _BibleBookPageState();
+}
+
+class _BibleBookPageState extends State<BibleBookPage> {
+  List<int> chapters = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChapters();
+  }
+
+  Future<void> _loadChapters() async {
+    final chaptersList = await BibleDatabaseService.getChapters(widget.book.id);
+    setState(() {
+      chapters = chaptersList;
+      isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.book.name),
+        backgroundColor: Colors.black,
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : Padding(
+        padding: const EdgeInsets.all(16),
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 1.2,
+          ),
+          itemCount: chapters.length,
+          itemBuilder: (context, index) {
+            final chapter = chapters[index];
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BibleChapterPage(
+                      book: widget.book,
+                      chapter: chapter,
+                    ),
+                  ),
+                );
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2D2D2D),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                ),
+                child: Center(
+                  child: Text(
+                    chapter.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------------- BIBLE CHAPTER PAGE -------------------------
+class BibleChapterPage extends StatefulWidget {
+  final BibleBook book;
+  final int chapter;
+
+  const BibleChapterPage({super.key, required this.book, required this.chapter});
+
+  @override
+  State<BibleChapterPage> createState() => _BibleChapterPageState();
+}
+
+class _BibleChapterPageState extends State<BibleChapterPage> {
+  List<BibleVerse> verses = [];
+  bool isLoading = true;
+  double fontSize = 16.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVerses();
+    _loadFontSize();
+  }
+
+  Future<void> _loadVerses() async {
+    final versesList = await BibleDatabaseService.getChapterVerses(
+      widget.book.id,
+      widget.chapter,
+    );
+    setState(() {
+      verses = versesList;
+      isLoading = false;
+    });
+  }
+
+  Future<void> _loadFontSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      fontSize = prefs.getDouble('bible_font_size') ?? 16.0;
+    });
+  }
+
+  Future<void> _saveFontSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('bible_font_size', fontSize);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.book.name} ${widget.chapter}'),
+        backgroundColor: Colors.black,
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'font_size') {
+                _showFontSizeDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'font_size',
+                child: Row(
+                  children: [
+                    Icon(Icons.text_fields, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Font Size'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+          : ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: verses.length,
+        itemBuilder: (context, index) {
+          final verse = verses[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${verse.verse} ',
+                    style: TextStyle(
+                      color: Colors.amber,
+                      fontSize: fontSize - 2,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextSpan(
+                    text: verse.text,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: fontSize,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showFontSizeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Font Size', style: TextStyle(color: Colors.white)),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Sample Text',
+                style: TextStyle(color: Colors.white, fontSize: fontSize),
+              ),
+              const SizedBox(height: 16),
+              Slider(
+                value: fontSize,
+                min: 12.0,
+                max: 24.0,
+                divisions: 12,
+                activeColor: Colors.amber,
+                onChanged: (value) {
+                  setDialogState(() => fontSize = value);
+                  setState(() => fontSize = value);
+                },
+              ),
+              Text(
+                '${fontSize.toInt()}px',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _saveFontSize();
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+            child: const Text('Save', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------- BIBLE SEARCH WIDGET -------------------------
+class BibleSearchWidget extends StatefulWidget {
+  const BibleSearchWidget({super.key});
+
+  @override
+  State<BibleSearchWidget> createState() => _BibleSearchWidgetState();
+}
+
+class _BibleSearchWidgetState extends State<BibleSearchWidget> {
+  final TextEditingController _searchController = TextEditingController();
+  List<BibleVerse> searchResults = [];
+  bool isSearching = false;
+  Map<int, BibleBook> booksMap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBooks();
+  }
+
+  Future<void> _loadBooks() async {
+    final books = await BibleDatabaseService.getBooks();
+    setState(() {
+      booksMap = {for (var book in books) book.id: book};
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        searchResults = [];
+      });
+      return;
+    }
+
+    setState(() => isSearching = true);
+
+    final results = await BibleDatabaseService.searchVerses(query);
+    setState(() {
+      searchResults = results;
+      isSearching = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search verses...',
+              hintStyle: const TextStyle(color: Colors.white54),
+              prefixIcon: const Icon(Icons.search, color: Colors.white54),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                icon: const Icon(Icons.clear, color: Colors.white54),
+                onPressed: () {
+                  _searchController.clear();
+                  _performSearch('');
+                },
+              )
+                  : null,
+              filled: true,
+              fillColor: const Color(0xFF2D2D2D),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            style: const TextStyle(color: Colors.white),
+            onChanged: _performSearch,
+          ),
+        ),
+        Expanded(
+          child: isSearching
+              ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+              : searchResults.isEmpty
+              ? const Center(
+            child: Text(
+              'Enter a search term to find verses',
+              style: TextStyle(color: Colors.white54),
+            ),
+          )
+              : ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: searchResults.length,
+            itemBuilder: (context, index) {
+              final verse = searchResults[index];
+              final book = booksMap[verse.bookId];
+
+              return Card(
+                color: const Color(0xFF2D2D2D),
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${book?.name ?? 'Unknown'} ${verse.chapter}:${verse.verse}',
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        verse.text,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+}
+
+// ------------------------- BIBLE SETTINGS WIDGET -------------------------
+class BibleSettingsWidget extends StatefulWidget {
+  const BibleSettingsWidget({super.key});
+
+  @override
+  State<BibleSettingsWidget> createState() => _BibleSettingsWidgetState();
+}
+
+class _BibleSettingsWidgetState extends State<BibleSettingsWidget> {
+  String currentTranslation = '';
+  Map<String, bool> availableTranslations = {};
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() => isLoading = true);
+
+    setState(() {
+      currentTranslation = BibleDatabaseService.currentTranslation;
+    });
+
+    // 🔥 Check which translations are actually available
+    final translationChecks = <String, bool>{};
+    for (final translation in BibleDatabaseService.availableTranslations.keys) {
+      translationChecks[translation] = await BibleDatabaseService.isTranslationAvailable(translation);
+    }
+
+    setState(() {
+      availableTranslations = translationChecks;
+      isLoading = false;
+    });
+
+    // Debug log
+    print('📖 Available translations: $availableTranslations');
+  }
+
+  Future<void> _switchTranslation(String translationCode) async {
+    try {
+      await BibleDatabaseService.switchTranslation(translationCode);
+      setState(() {
+        currentTranslation = translationCode;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Switched to $translationCode'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to switch translation: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadTranslation(String translationCode) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BibleDownloadPage(selectedTranslation: translationCode),
+      ),
+    );
+
+    // Reload settings when returning from download page
+    if (result == true || result == null) {
+      await _loadSettings();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator(color: Colors.amber));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Current Translation Section
+        Card(
+          color: const Color(0xFF2D2D2D),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Current Translation',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  currentTranslation.isEmpty ? 'None selected' :
+                  '${BibleDatabaseService.availableTranslations[currentTranslation]} ($currentTranslation)',
+                  style: const TextStyle(
+                    color: Colors.amber,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Debug button
+                ElevatedButton(
+                  onPressed: () async {
+                    final info = await BibleDatabaseService.getDatabaseInfo();
+                    if (mounted) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: const Color(0xFF1E1E1E),
+                          title: const Text('Database Info', style: TextStyle(color: Colors.white)),
+                          content: SingleChildScrollView(
+                            child: Text(
+                              info.toString(),
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close', style: TextStyle(color: Colors.amber)),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Debug Info'),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Available Translations Section
+        Card(
+          color: const Color(0xFF2D2D2D),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Available Translations',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...availableTranslations.entries.map((entry) {
+                  final translationCode = entry.key;
+                  final isAvailable = entry.value;
+                  final translationName = BibleDatabaseService.availableTranslations[translationCode] ?? translationCode;
+
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      isAvailable ? Icons.check_circle : Icons.download,
+                      color: isAvailable ? Colors.green : Colors.amber,
+                    ),
+                    title: Text(
+                      translationName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      translationCode,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    trailing: isAvailable
+                        ? (currentTranslation == translationCode
+                        ? const Icon(Icons.radio_button_checked, color: Colors.amber)
+                        : TextButton(
+                      onPressed: () => _switchTranslation(translationCode),
+                      child: const Text('Switch', style: TextStyle(color: Colors.amber)),
+                    ))
+                        : TextButton(
+                      onPressed: () => _downloadTranslation(translationCode),
+                      child: const Text('Download', style: TextStyle(color: Colors.amber)),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // App Settings Section
+        Card(
+          color: const Color(0xFF2D2D2D),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'App Settings',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.download, color: Colors.amber),
+                  title: const Text(
+                    'Manage Downloads',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: const Text(
+                    'Download or remove Bible translations',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BibleDownloadPage()),
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.storage, color: Colors.amber),
+                  title: const Text(
+                    'Clear Cache',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: const Text(
+                    'Free up storage space',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
+                  onTap: _showClearCacheDialog,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // About Section
+        Card(
+          color: const Color(0xFF2D2D2D),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'About',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Bible Reader App v1.0.0',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Read the Bible offline with multiple translations and search functionality.',
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+
+  void _showClearCacheDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text(
+          'Clear Cache',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'This will clear temporary files and free up storage space. Your downloaded translations will not be affected.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _clearCache();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+            child: const Text('Clear', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearCache() async {
+    try {
+      // Add your cache clearing logic here
+      // For example: await BibleDatabaseService.clearCache();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cache cleared successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to clear cache: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+// ------------------------- DATA MODELS -------------------------
+// You'll need to add these model classes and services
+
+class BibleBook {
+  final int id;
+  final String name;
+
+  BibleBook({required this.id, required this.name});
+}
+
+class BibleVerse {
+  final int bookId;
+  final int chapter;
+  final int verse;
+  final String text;
+
+  BibleVerse({
+    required this.bookId,
+    required this.chapter,
+    required this.verse,
+    required this.text,
+  });
+}
+
+// ------------------------- DATABASE SERVICE -------------------------
+// This is a placeholder - implement your actual database service
+class BibleDatabaseService {
+  static String currentTranslation = 'KJV';
+  static Database? _currentDatabase;
+
+  static final Map<String, String> availableTranslations = {
+    'KJV': 'King James Version',
+    'ASV': 'American Standard Version',
+    'NHEB': 'New Heart English Bible',
+  };
+
+  // Get the current database connection
+  static Future<Database?> get database async {
+    if (_currentDatabase != null && _currentDatabase!.isOpen) {
+      return _currentDatabase;
+    }
+
+    if (await isTranslationAvailable(currentTranslation)) {
+      await _connectToTranslation(currentTranslation);
+      return _currentDatabase;
+    }
+
+    return null;
+  }
+
+  // Connect to a specific translation database
+  static Future<void> _connectToTranslation(String translation) async {
+    try {
+      final dbPath = await getDatabasesPath();
+      final filePath = p.join(dbPath, '${translation.toUpperCase()}.db');
+
+      final file = File(filePath);
+      if (await file.exists()) {
+        _currentDatabase = await openDatabase(
+          filePath,
+          readOnly: true,
+        );
+
+        // Save current translation preference
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('current_bible_translation', translation);
+
+        print('✅ Connected to $translation database at $filePath');
+      } else {
+        print('❌ Database file not found: $filePath');
+      }
+    } catch (e) {
+      print('❌ Error connecting to $translation database: $e');
+      _currentDatabase = null;
+    }
+  }
+
+  // Check if a translation is downloaded and available
+  static Future<bool> isTranslationAvailable(String translationCode) async {
+    try {
+      final dbPath = await getDatabasesPath();
+      final filePath = p.join(dbPath, '${translationCode.toUpperCase()}.db');
+      final file = File(filePath);
+
+      if (await file.exists() && await file.length() > 1000) {
+        // Verify it's a valid database by trying to open it
+        try {
+          final db = await openDatabase(filePath, readOnly: true);
+          // Check if it has the expected tables
+          final tables = await db.query('sqlite_master',
+              where: 'type = ?',
+              whereArgs: ['table']
+          );
+          await db.close();
+
+          // Look for common Bible database table structures
+          final tableNames = tables.map((t) => (t['name'] as String).toLowerCase()).toList();
+          final hasValidStructure = tableNames.any((name) =>
+          name.contains('verse') || name.contains('scripture') || name.contains('bible')
+          );
+
+          return hasValidStructure;
+        } catch (e) {
+          print('❌ Invalid database file for $translationCode: $e');
+          return false;
+        }
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error checking translation availability: $e');
+      return false;
+    }
+  }
+
+  // Switch to a different translation
+  static Future<void> switchTranslation(String translationCode) async {
+    if (!await isTranslationAvailable(translationCode)) {
+      throw Exception('Translation $translationCode is not available');
+    }
+
+    // Close current database
+    if (_currentDatabase != null && _currentDatabase!.isOpen) {
+      await _currentDatabase!.close();
+      _currentDatabase = null;
+    }
+
+    // Switch to new translation
+    currentTranslation = translationCode;
+    await _connectToTranslation(translationCode);
+  }
+
+  // Load saved translation preference
+  static Future<void> loadSavedTranslation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('current_bible_translation');
+
+      if (saved != null && await isTranslationAvailable(saved)) {
+        currentTranslation = saved;
+        await _connectToTranslation(saved);
+      } else {
+        // Try to find any available translation
+        for (final translation in availableTranslations.keys) {
+          if (await isTranslationAvailable(translation)) {
+            currentTranslation = translation;
+            await _connectToTranslation(translation);
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading saved translation: $e');
+    }
+  }
+
+  // Enhanced method to detect and work with different database schemas
+  static Future<Map<String, String>> _detectDatabaseSchema() async {
+    final db = await database;
+    if (db == null) return {};
+
+    try {
+      // Get all tables
+      final tables = await db.query('sqlite_master',
+          where: 'type = ?',
+          whereArgs: ['table']
+      );
+
+      final schema = <String, String>{};
+
+      for (final table in tables) {
+        final tableName = table['name'] as String;
+        if (tableName.startsWith('sqlite_')) continue;
+
+        // Get table info
+        final pragma = await db.rawQuery('PRAGMA table_info($tableName)');
+        final columns = pragma.map((col) => col['name'] as String).toList();
+
+        // Identify table types based on columns
+        if (columns.any((col) => col.toLowerCase().contains('book'))) {
+          schema['books_table'] = tableName;
+        }
+        if (columns.any((col) => col.toLowerCase().contains('verse')) ||
+            columns.any((col) => col.toLowerCase().contains('text')) ||
+            columns.any((col) => col.toLowerCase().contains('scripture'))) {
+          schema['verses_table'] = tableName;
+
+          // Map column names
+          for (final col in columns) {
+            final colLower = col.toLowerCase();
+            if (colLower.contains('book')) schema['book_column'] = col;
+            if (colLower.contains('chapter')) schema['chapter_column'] = col;
+            if (colLower.contains('verse')) schema['verse_column'] = col;
+            if (colLower.contains('text') || colLower.contains('scripture')) {
+              schema['text_column'] = col;
+            }
+          }
+        }
+      }
+
+      return schema;
+    } catch (e) {
+      print('❌ Error detecting database schema: $e');
+      return {};
+    }
+  }
+
+  // Get list of books from current database
+  static Future<List<BibleBook>> getBooks() async {
+    final db = await database;
+    if (db == null) return [];
+
+    try {
+      final schema = await _detectDatabaseSchema();
+      final booksTable = schema['books_table'];
+
+      List<Map<String, dynamic>> results = [];
+
+      if (booksTable != null) {
+        // Use detected books table
+        results = await db.query(booksTable, orderBy: 'id');
+      } else {
+        // Try common table names
+        final possibleTables = ['books', 'book', 'book_names'];
+        for (final tableName in possibleTables) {
+          try {
+            results = await db.query(tableName, orderBy: 'id');
+            break;
+          } catch (e) {
+            continue;
+          }
+        }
+
+        // If no books table, generate from verses table
+        if (results.isEmpty) {
+          final versesTable = schema['verses_table'] ?? 'verses';
+          final bookColumn = schema['book_column'] ?? 'book';
+
+          try {
+            results = await db.query(
+              versesTable,
+              columns: ['DISTINCT $bookColumn as id'],
+              orderBy: bookColumn,
+            );
+
+            // Add book names (you might want to create a mapping)
+            results = results.map((row) {
+              final id = row['id'] as int;
+              return {
+                'id': id,
+                'name': _getBookName(id),
+              };
+            }).toList();
+          } catch (e) {
+            print('❌ Error generating books from verses: $e');
+          }
+        }
+      }
+
+      return results.map((row) {
+        final id = row['id'] as int? ?? row['book_id'] as int? ?? 0;
+        final name = row['name'] as String? ??
+            row['book_name'] as String? ??
+            row['title'] as String? ??
+            _getBookName(id);
+
+        return BibleBook(id: id, name: name);
+      }).toList();
+
+    } catch (e) {
+      print('❌ Error fetching books: $e');
+      return [];
+    }
+  }
+
+  // Helper method to get book names from IDs
+  static String _getBookName(int bookId) {
+    const bookNames = [
+      '', // 0 - placeholder
+      'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+      'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel',
+      '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra',
+      'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
+      'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 'Lamentations',
+      'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+      'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk',
+      'Zephaniah', 'Haggai', 'Zechariah', 'Malachi', 'Matthew',
+      'Mark', 'Luke', 'John', 'Acts', 'Romans',
+      '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians', 'Philippians',
+      'Colossians', '1 Thessalonians', '2 Thessalonians', '1 Timothy', '2 Timothy',
+      'Titus', 'Philemon', 'Hebrews', 'James', '1 Peter',
+      '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
+    ];
+
+    if (bookId > 0 && bookId < bookNames.length) {
+      return bookNames[bookId];
+    }
+    return 'Book $bookId';
+  }
+
+  // Get chapters for a specific book
+  static Future<List<int>> getChapters(int bookId) async {
+    final db = await database;
+    if (db == null) return [];
+
+    try {
+      final schema = await _detectDatabaseSchema();
+      final versesTable = schema['verses_table'] ?? 'verses';
+      final bookColumn = schema['book_column'] ?? 'book';
+      final chapterColumn = schema['chapter_column'] ?? 'chapter';
+
+      final results = await db.query(
+        versesTable,
+        columns: ['DISTINCT $chapterColumn'],
+        where: '$bookColumn = ?',
+        whereArgs: [bookId],
+        orderBy: chapterColumn,
+      );
+
+      return results.map((row) => row[chapterColumn] as int).toList();
+    } catch (e) {
+      print('❌ Error fetching chapters: $e');
+      return [];
+    }
+  }
+
+  // Get verses for a specific chapter
+  static Future<List<BibleVerse>> getChapterVerses(int bookId, int chapter) async {
+    final db = await database;
+    if (db == null) return [];
+
+    try {
+      final schema = await _detectDatabaseSchema();
+      final versesTable = schema['verses_table'] ?? 'verses';
+      final bookColumn = schema['book_column'] ?? 'book';
+      final chapterColumn = schema['chapter_column'] ?? 'chapter';
+      final verseColumn = schema['verse_column'] ?? 'verse';
+      final textColumn = schema['text_column'] ?? 'text';
+
+      final results = await db.query(
+        versesTable,
+        where: '$bookColumn = ? AND $chapterColumn = ?',
+        whereArgs: [bookId, chapter],
+        orderBy: verseColumn,
+      );
+
+      return results.map((row) {
+        return BibleVerse(
+          bookId: row[bookColumn] as int,
+          chapter: row[chapterColumn] as int,
+          verse: row[verseColumn] as int,
+          text: row[textColumn] as String,
+        );
+      }).toList();
+
+    } catch (e) {
+      print('❌ Error fetching chapter verses: $e');
+      return [];
+    }
+  }
+
+  // Search verses by text
+  static Future<List<BibleVerse>> searchVerses(String query) async {
+    final db = await database;
+    if (db == null || query.trim().isEmpty) return [];
+
+    try {
+      final schema = await _detectDatabaseSchema();
+      final versesTable = schema['verses_table'] ?? 'verses';
+      final bookColumn = schema['book_column'] ?? 'book';
+      final chapterColumn = schema['chapter_column'] ?? 'chapter';
+      final verseColumn = schema['verse_column'] ?? 'verse';
+      final textColumn = schema['text_column'] ?? 'text';
+
+      final results = await db.query(
+        versesTable,
+        where: '$textColumn LIKE ?',
+        whereArgs: ['%${query.trim()}%'],
+        orderBy: '$bookColumn, $chapterColumn, $verseColumn',
+        limit: 100,
+      );
+
+      return results.map((row) {
+        return BibleVerse(
+          bookId: row[bookColumn] as int,
+          chapter: row[chapterColumn] as int,
+          verse: row[verseColumn] as int,
+          text: row[textColumn] as String,
+        );
+      }).toList();
+
+    } catch (e) {
+      print('❌ Error searching verses: $e');
+      return [];
+    }
+  }
+
+  // Initialize the database service
+  static Future<void> initialize() async {
+    await loadSavedTranslation();
+  }
+
+  // Close database connection
+  static Future<void> close() async {
+    if (_currentDatabase != null && _currentDatabase!.isOpen) {
+      await _currentDatabase!.close();
+      _currentDatabase = null;
+    }
+  }
+
+  // Get database info for debugging
+  static Future<Map<String, dynamic>> getDatabaseInfo() async {
+    final db = await database;
+    if (db == null) return {'error': 'No database connection'};
+
+    try {
+      final info = <String, dynamic>{
+        'translation': currentTranslation,
+        'isOpen': db.isOpen,
+        'path': db.path,
+      };
+
+      // Get schema info
+      final schema = await _detectDatabaseSchema();
+      info['detected_schema'] = schema;
+
+      // Get all tables
+      final tables = await db.query('sqlite_master', where: 'type = ?', whereArgs: ['table']);
+      info['tables'] = tables.map((t) => t['name']).toList();
+
+      // Get sample data from each table
+      for (final table in tables) {
+        final tableName = table['name'] as String;
+        if (!tableName.startsWith('sqlite_')) {
+          try {
+            final sample = await db.query(tableName, limit: 1);
+            info['sample_$tableName'] = sample;
+          } catch (e) {
+            info['sample_$tableName'] = 'Error: $e';
+          }
+        }
+      }
+
+      return info;
+    } catch (e) {
+      return {'error': 'Database error: $e'};
+    }
+  }
+}
+
+// ------------------------- DOWNLOAD PAGE -------------------------
+// Placeholder for the download page
+class BibleDownloadPage extends StatefulWidget {
+  final String? selectedTranslation;
+
+  const BibleDownloadPage({super.key, this.selectedTranslation});
+
+  @override
+  State<BibleDownloadPage> createState() => _BibleDownloadPageState();
+}
+
+class _BibleDownloadPageState extends State<BibleDownloadPage> {
+  Map<String, bool> downloadStatus = {};
+  Map<String, double> downloadProgress = {};
+  Map<String, bool> isDownloading = {};
+  String? downloadError;
+  bool isChecking = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDownloadStatus();
+  }
+
+  Future<void> _checkDownloadStatus() async {
+    setState(() => isChecking = true);
+
+    for (final translation in BibleDownloadManager.availableTranslations.keys) {
+      final isAvailable = await BibleDatabaseService.isTranslationAvailable(translation);
+      setState(() {
+        downloadStatus[translation] = isAvailable;
+        isDownloading[translation] = false;
+        downloadProgress[translation] = 0.0;
+      });
+    }
+
+    setState(() => isChecking = false);
+  }
+
+  Future<void> _downloadTranslation(String translation) async {
+    setState(() {
+      isDownloading[translation] = true;
+      downloadProgress[translation] = 0.0;
+      downloadError = null;
+    });
+
+    final success = await BibleDownloadManager.downloadBibleDatabase(
+      translation,
+      onProgress: (progress) {
+        if (mounted) {
+          setState(() {
+            downloadProgress[translation] = progress;
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            downloadError = error;
+            isDownloading[translation] = false;
+          });
+        }
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        isDownloading[translation] = false;
+        downloadStatus[translation] = success;
+      });
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $translation downloaded successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // If this is the first translation downloaded, switch to it
+        if (BibleDatabaseService.currentTranslation.isEmpty) {
+          await BibleDatabaseService.switchTranslation(translation);
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to download $translation${downloadError != null ? ': $downloadError' : ''}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteTranslation(String translation) async {
+    // Prevent deleting the current translation
+    if (translation == BibleDatabaseService.currentTranslation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('❌ Cannot delete the currently active translation'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: Text('Delete $translation?', style: const TextStyle(color: Colors.white)),
+        content: Text(
+          'This will permanently remove the ${BibleDownloadManager.availableTranslations[translation]?['name']} from your device.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final success = await BibleDownloadManager.deleteBibleDatabase(translation);
+      setState(() {
+        downloadStatus[translation] = !success;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success
+              ? '🗑️ $translation deleted successfully!'
+              : '❌ Failed to delete $translation'
+          ),
+          backgroundColor: success ? Colors.orange : Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isChecking) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('📥 Download Bible'),
+          backgroundColor: Colors.black,
+        ),
+        backgroundColor: const Color(0xFF1E1E1E),
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.amber),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('📥 Download Bible Translations'),
+        backgroundColor: Colors.black,
+        actions: [
+          IconButton(
+            onPressed: _checkDownloadStatus,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Header Info
+          Card(
+            color: Colors.blue.withOpacity(0.1),
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Icon(Icons.download_rounded, color: Colors.blue, size: 48),
+                  SizedBox(height: 12),
+                  Text(
+                    'Download Bible Translations',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Download different Bible translations for offline reading. Each translation is typically 4-5 MB.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Popular translations section
+          _buildSectionHeader('Popular Translations'),
+          ...['KJV', 'NIV', 'AMP', 'MSG'].map((translation) =>
+              _buildTranslationCard(translation)
+          ),
+
+          const SizedBox(height: 24),
+
+          // Other translations section
+          _buildSectionHeader('Other Translations'),
+          ...['ASV', 'NHEB', 'ESV', 'NASB'].map((translation) =>
+              _buildTranslationCard(translation)
+          ),
+
+          if (downloadError != null) ...[
+            const SizedBox(height: 16),
+            Card(
+              color: Colors.red.withOpacity(0.1),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error, color: Colors.red),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Download Error',
+                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            downloadError!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // Storage info
+          Card(
+            color: const Color(0xFF2D2D2D),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.amber),
+                      SizedBox(width: 8),
+                      Text(
+                        'Storage Information',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '• Each translation is approximately 4-5 MB\n'
+                        '• Downloads are stored locally on your device\n'
+                        '• Internet connection required for downloading\n'
+                        '• Downloaded translations work completely offline',
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12, top: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.amber,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTranslationCard(String translation) {
+    final data = BibleDownloadManager.availableTranslations[translation]!;
+    final isDownloaded = downloadStatus[translation] ?? false;
+    final isCurrentlyDownloading = isDownloading[translation] ?? false;
+    final progress = downloadProgress[translation] ?? 0.0;
+    final isCurrentTranslation = translation == BibleDatabaseService.currentTranslation;
+
+    return Card(
+      color: const Color(0xFF2D2D2D),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            data['name']!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (isCurrentTranslation) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.amber,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'ACTIVE',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$translation • ${data['size']}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        data['description']!,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isDownloaded && !isCurrentTranslation)
+                  IconButton(
+                    onPressed: () => _deleteTranslation(translation),
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    tooltip: 'Delete',
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            if (isCurrentlyDownloading) ...[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor: Colors.grey[700],
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.amber),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Downloading... ${(progress * 100).toInt()}%',
+                    style: const TextStyle(color: Colors.amber, fontSize: 12),
+                  ),
+                ],
+              ),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isDownloaded
+                      ? (isCurrentTranslation
+                      ? null
+                      : () async {
+                    await BibleDatabaseService.switchTranslation(translation);
+                    setState(() {}); // Refresh to show new active translation
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✅ Switched to $translation'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  })
+                      : () => _downloadTranslation(translation),
+                  icon: Icon(
+                    isDownloaded
+                        ? (isCurrentTranslation ? Icons.check_circle : Icons.swap_horiz)
+                        : Icons.download,
+                    color: isDownloaded
+                        ? (isCurrentTranslation ? Colors.green : Colors.amber)
+                        : Colors.white,
+                  ),
+                  label: Text(
+                    isDownloaded
+                        ? (isCurrentTranslation ? 'Active Translation' : 'Switch To This')
+                        : 'Download',
+                    style: TextStyle(
+                      color: isDownloaded
+                          ? (isCurrentTranslation ? Colors.green : Colors.black)
+                          : Colors.white,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDownloaded
+                        ? (isCurrentTranslation
+                        ? Colors.green.withOpacity(0.2)
+                        : Colors.amber)
+                        : Colors.amber,
+                    foregroundColor: isDownloaded
+                        ? (isCurrentTranslation ? Colors.green : Colors.black)
+                        : Colors.black,
+                    disabledBackgroundColor: Colors.green.withOpacity(0.2),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class BibleTranslation {
+  final String translation;
+  final String title;
+  final String? license;
+
+  BibleTranslation({
+    required this.translation,
+    required this.title,
+    this.license,
+  });
+
+  factory BibleTranslation.fromMap(Map<String, dynamic> map) {
+    return BibleTranslation(
+      translation: map['translation'] as String,
+      title: map['title'] as String,
+      license: map['license'] as String?,
+    );
+  }
+}
+
+class BibleChapter {
+  final int chapter;
+  final List<BibleVerse> verses;
+
+  BibleChapter({required this.chapter, required this.verses});
+}
+
+// ------------------------- BIBLE DATABASE SERVICE -------------------------
+
+
+// ------------------------- DOWNLOAD MANAGER FOR BIBLE TRANSLATIONS -------------------------
+class BibleDownloadManager {
+  static final Map<String, Map<String, String>> _translations = {
+    'KJV': {
+      'name': 'King James Version',
+      'url': 'https://github.com/scrollmapper/bible_databases/raw/master/formats/sqlite/KJV.db',
+      'size': '4.2 MB',
+      'description': 'Traditional English translation from 1611'
+    },
+
+    'ASV': {
+      'name': 'American Standard Version',
+      'url': 'https://github.com/scrollmapper/bible_databases/raw/master/formats/sqlite/ASV.db',
+      'size': '4.1 MB',
+      'description': 'Revised version of KJV from 1901'
+    },
+    'NHEB': {
+      'name': 'New Heart English Bible',
+      'url': 'https://github.com/scrollmapper/bible_databases/raw/master/formats/sqlite/NHEB.db',
+      'size': '4.3 MB',
+      'description': 'Modern English revision based on World English Bible'
+    },
+
+  };
+
+  static Future<bool> downloadBibleDatabase(
+      String translation, {
+        Function(double)? onProgress,
+        Function(String)? onError,
+      }) async {
+    final translationData = _translations[translation];
+    if (translationData == null) {
+      onError?.call('Translation not available');
+      return false;
+    }
+
+    try {
+      final url = translationData['url']!;
+      final dbPath = await getDatabasesPath();
+      final filePath = p.join(dbPath, '${translation.toUpperCase()}.db');
+
+      print('📥 Starting download: $url');
+      print('📁 Saving to: $filePath');
+
+      // Check if file already exists
+      final file = File(filePath);
+      if (await file.exists()) {
+        await file.delete();
+        print('🗑️ Deleted existing file');
+      }
+
+      // Download with progress tracking
+      final request = http.Request('GET', Uri.parse(url));
+      final streamedResponse = await http.Client().send(request);
+
+      print('📡 Response status: ${streamedResponse.statusCode}');
+
+      if (streamedResponse.statusCode != 200) {
+        onError?.call('Download failed: HTTP ${streamedResponse.statusCode}');
+        return false;
+      }
+
+      final contentLength = streamedResponse.contentLength ?? 0;
+      var downloadedBytes = 0;
+      final bytes = <int>[];
+
+      print('📊 Content length: $contentLength bytes');
+
+      await for (final chunk in streamedResponse.stream) {
+        bytes.addAll(chunk);
+        downloadedBytes += chunk.length;
+
+        if (contentLength > 0) {
+          final progress = downloadedBytes / contentLength;
+          onProgress?.call(progress);
+          print('⬇️ Progress: ${(progress * 100).toInt()}%');
+        }
+      }
+
+      // Write to file
+      await file.writeAsBytes(bytes);
+      print('💾 File written: ${bytes.length} bytes');
+
+      // Verify file was created and is valid
+      if (await file.exists() && await file.length() > 1000) {
+        // Try to open the database to verify it's valid
+        try {
+          final db = await openDatabase(filePath, readOnly: true);
+          final tables = await db.query('sqlite_master', where: 'type = ?', whereArgs: ['table']);
+          await db.close();
+
+          if (tables.isNotEmpty) {
+            print('✅ Successfully downloaded and verified $translation Bible');
+            return true;
+          } else {
+            onError?.call('Downloaded file appears to be invalid (no tables found)');
+            await file.delete();
+            return false;
+          }
+        } catch (e) {
+          onError?.call('Downloaded file is not a valid SQLite database: $e');
+          await file.delete();
+          return false;
+        }
+      } else {
+        onError?.call('Failed to save downloaded file');
+        return false;
+      }
+
+    } catch (e) {
+      print('❌ Download error: $e');
+      onError?.call('Download error: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> deleteBibleDatabase(String translation) async {
+    try {
+      final dbPath = await getDatabasesPath();
+      final filePath = p.join(dbPath, '${translation.toUpperCase()}.db');
+      final file = File(filePath);
+
+      if (await file.exists()) {
+        await file.delete();
+        print('🗑️ Deleted $translation Bible database');
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error deleting Bible database: $e');
+      return false;
+    }
+  }
+
+  static Map<String, Map<String, String>> get availableTranslations => _translations;
 }
