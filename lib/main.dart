@@ -5794,7 +5794,7 @@ class _BibleDownloadPageState extends State<BibleDownloadPage> {
 
           // Popular translations section
           _buildSectionHeader('Popular Translations'),
-          ...['KJV', 'NIV', 'AMP', 'MSG'].map((translation) =>
+          ...['KJV'].map((translation) =>
               _buildTranslationCard(translation)
           ),
 
