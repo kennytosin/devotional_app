@@ -4076,11 +4076,205 @@ class _ArchivePageState extends State<ArchivePage> {
 
 
 
-class FavouritesPage extends StatelessWidget {
+class FavouritesPage extends StatefulWidget {
   const FavouritesPage({super.key});
+
   @override
-  Widget build(BuildContext context) =>
-      Scaffold(appBar: AppBar(title: const Text("Favourites")));
+  State<FavouritesPage> createState() => _FavouritesPageState();
+}
+
+class _FavouritesPageState extends State<FavouritesPage> {
+  List<String> favoriteDevotionals = [];
+  List<String> favoriteBibleBooks = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        favoriteDevotionals = prefs.getStringList('favorite_devotionals') ?? [];
+        favoriteBibleBooks = prefs.getStringList('favorite_bible_books') ?? [];
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading favorites: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF1E1E1E),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.amber),
+        ),
+      );
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("💝 Favorites"),
+          backgroundColor: Colors.black,
+          bottom: const TabBar(
+            indicatorColor: Colors.amber,
+            labelColor: Colors.amber,
+            unselectedLabelColor: Colors.white70,
+            tabs: [
+              Tab(text: "Devotionals"),
+              Tab(text: "Bible Books"),
+            ],
+          ),
+        ),
+        backgroundColor: const Color(0xFF1E1E1E),
+        body: TabBarView(
+          children: [
+            _buildDevotionalsFavoritesTab(),
+            _buildBibleBooksFavoritesTab(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDevotionalsFavoritesTab() {
+    if (favoriteDevotionals.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.favorite_border,
+              size: 80,
+              color: Colors.white30,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No favorite devotionals yet',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white54,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Mark devotionals as favorites to see them here',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white38,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: favoriteDevotionals.length,
+      itemBuilder: (context, index) {
+        final devotionalId = favoriteDevotionals[index];
+        return Card(
+          color: const Color(0xFF2D2D2D),
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: const Icon(Icons.favorite, color: Colors.red),
+            title: Text(
+              'Devotional ${devotionalId}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            subtitle: const Text(
+              'Tap to read',
+              style: TextStyle(color: Colors.white70),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+            onTap: () {
+              // Navigate to devotional detail
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Navigate to devotional detail')),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBibleBooksFavoritesTab() {
+    if (favoriteBibleBooks.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.menu_book,
+              size: 80,
+              color: Colors.white30,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No favorite Bible books yet',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white54,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Mark Bible books as favorites in the Bible section',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white38,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: favoriteBibleBooks.length,
+      itemBuilder: (context, index) {
+        final bookName = favoriteBibleBooks[index];
+        return Card(
+          color: const Color(0xFF2D2D2D),
+          margin: const EdgeInsets.only(bottom: 12),
+          child: ListTile(
+            leading: const Icon(Icons.favorite, color: Colors.red),
+            title: Text(
+              bookName,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            subtitle: const Text(
+              'Bible Book',
+              style: TextStyle(color: Colors.white70),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.white54),
+            onTap: () {
+              // Navigate to Bible book
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Opening $bookName')),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
 }
 
 
@@ -4157,229 +4351,513 @@ class BiblePage extends StatefulWidget {
   State<BiblePage> createState() => _BiblePageState();
 }
 
-class _BiblePageState extends State<BiblePage> with SingleTickerProviderStateMixin {
+class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
   late TabController _tabController;
-  List<BibleBook> books = [];
+  final TextEditingController _searchController = TextEditingController();
+
+  List<BibleBook> allBooks = [];
+  List<BibleBook> filteredBooks = [];
+  Set<String> favoriteBooks = {};
+  String searchQuery = '';
   bool isLoading = true;
-  bool isDatabaseAvailable = false;
-  String? errorMessage;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _initializeBible();
+    _initializeBibleBooks();
+    _loadFavorites();
+    _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _initializeBible() async {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
     setState(() {
-      isLoading = true;
-      errorMessage = null;
+      searchQuery = _searchController.text;
+      _filterBooks();
     });
+  }
 
-    try {
-      final db = await BibleDatabaseService.database;
-      if (db != null) {
-        final booksList = await BibleDatabaseService.getBooks();
-        setState(() {
-          books = booksList;
-          isDatabaseAvailable = booksList.isNotEmpty;
-          isLoading = false;
-        });
-
-        if (booksList.isEmpty) {
-          setState(() {
-            errorMessage = 'Database is empty or has an unsupported format';
-          });
-        }
-
-        // Debug info
-        final info = await BibleDatabaseService.getDatabaseInfo();
-        print('📖 Bible Database Info: $info');
-      } else {
-        setState(() {
-          isDatabaseAvailable = false;
-          isLoading = false;
-          errorMessage = 'No Bible translations found';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        isDatabaseAvailable = false;
-        isLoading = false;
-        errorMessage = 'Error loading Bible: $e';
-      });
-      print('❌ Error initializing Bible: $e');
+  void _filterBooks() {
+    if (searchQuery.isEmpty) {
+      filteredBooks = allBooks;
+    } else {
+      filteredBooks = allBooks.where((book) {
+        return book.name.toLowerCase().contains(searchQuery.toLowerCase());
+      }).toList();
     }
+  }
+
+  // Complete list of Bible books (66 books total)
+  void _initializeBibleBooks() {
+    allBooks = const [
+      // Old Testament (39 books)
+      BibleBook(number: 1, name: "Genesis", testament: "Old", chapters: 50),
+      BibleBook(number: 2, name: "Exodus", testament: "Old", chapters: 40),
+      BibleBook(number: 3, name: "Leviticus", testament: "Old", chapters: 27),
+      BibleBook(number: 4, name: "Numbers", testament: "Old", chapters: 36),
+      BibleBook(number: 5, name: "Deuteronomy", testament: "Old", chapters: 34),
+      BibleBook(number: 6, name: "Joshua", testament: "Old", chapters: 24),
+      BibleBook(number: 7, name: "Judges", testament: "Old", chapters: 21),
+      BibleBook(number: 8, name: "Ruth", testament: "Old", chapters: 4),
+      BibleBook(number: 9, name: "1 Samuel", testament: "Old", chapters: 31),
+      BibleBook(number: 10, name: "2 Samuel", testament: "Old", chapters: 24),
+      BibleBook(number: 11, name: "1 Kings", testament: "Old", chapters: 22),
+      BibleBook(number: 12, name: "2 Kings", testament: "Old", chapters: 25),
+      BibleBook(number: 13, name: "1 Chronicles", testament: "Old", chapters: 29),
+      BibleBook(number: 14, name: "2 Chronicles", testament: "Old", chapters: 36),
+      BibleBook(number: 15, name: "Ezra", testament: "Old", chapters: 10),
+      BibleBook(number: 16, name: "Nehemiah", testament: "Old", chapters: 13),
+      BibleBook(number: 17, name: "Esther", testament: "Old", chapters: 10),
+      BibleBook(number: 18, name: "Job", testament: "Old", chapters: 42),
+      BibleBook(number: 19, name: "Psalms", testament: "Old", chapters: 150),
+      BibleBook(number: 20, name: "Proverbs", testament: "Old", chapters: 31),
+      BibleBook(number: 21, name: "Ecclesiastes", testament: "Old", chapters: 12),
+      BibleBook(number: 22, name: "Song of Solomon", testament: "Old", chapters: 8),
+      BibleBook(number: 23, name: "Isaiah", testament: "Old", chapters: 66),
+      BibleBook(number: 24, name: "Jeremiah", testament: "Old", chapters: 52),
+      BibleBook(number: 25, name: "Lamentations", testament: "Old", chapters: 5),
+      BibleBook(number: 26, name: "Ezekiel", testament: "Old", chapters: 48),
+      BibleBook(number: 27, name: "Daniel", testament: "Old", chapters: 12),
+      BibleBook(number: 28, name: "Hosea", testament: "Old", chapters: 14),
+      BibleBook(number: 29, name: "Joel", testament: "Old", chapters: 3),
+      BibleBook(number: 30, name: "Amos", testament: "Old", chapters: 9),
+      BibleBook(number: 31, name: "Obadiah", testament: "Old", chapters: 1),
+      BibleBook(number: 32, name: "Jonah", testament: "Old", chapters: 4),
+      BibleBook(number: 33, name: "Micah", testament: "Old", chapters: 7),
+      BibleBook(number: 34, name: "Nahum", testament: "Old", chapters: 3),
+      BibleBook(number: 35, name: "Habakkuk", testament: "Old", chapters: 3),
+      BibleBook(number: 36, name: "Zephaniah", testament: "Old", chapters: 3),
+      BibleBook(number: 37, name: "Haggai", testament: "Old", chapters: 2),
+      BibleBook(number: 38, name: "Zechariah", testament: "Old", chapters: 14),
+      BibleBook(number: 39, name: "Malachi", testament: "Old", chapters: 4),
+
+      // New Testament (27 books)
+      BibleBook(number: 40, name: "Matthew", testament: "New", chapters: 28),
+      BibleBook(number: 41, name: "Mark", testament: "New", chapters: 16),
+      BibleBook(number: 42, name: "Luke", testament: "New", chapters: 24),
+      BibleBook(number: 43, name: "John", testament: "New", chapters: 21),
+      BibleBook(number: 44, name: "Acts", testament: "New", chapters: 28),
+      BibleBook(number: 45, name: "Romans", testament: "New", chapters: 16),
+      BibleBook(number: 46, name: "1 Corinthians", testament: "New", chapters: 16),
+      BibleBook(number: 47, name: "2 Corinthians", testament: "New", chapters: 13),
+      BibleBook(number: 48, name: "Galatians", testament: "New", chapters: 6),
+      BibleBook(number: 49, name: "Ephesians", testament: "New", chapters: 6),
+      BibleBook(number: 50, name: "Philippians", testament: "New", chapters: 4),
+      BibleBook(number: 51, name: "Colossians", testament: "New", chapters: 4),
+      BibleBook(number: 52, name: "1 Thessalonians", testament: "New", chapters: 5),
+      BibleBook(number: 53, name: "2 Thessalonians", testament: "New", chapters: 3),
+      BibleBook(number: 54, name: "1 Timothy", testament: "New", chapters: 6),
+      BibleBook(number: 55, name: "2 Timothy", testament: "New", chapters: 4),
+      BibleBook(number: 56, name: "Titus", testament: "New", chapters: 3),
+      BibleBook(number: 57, name: "Philemon", testament: "New", chapters: 1),
+      BibleBook(number: 58, name: "Hebrews", testament: "New", chapters: 13),
+      BibleBook(number: 59, name: "James", testament: "New", chapters: 5),
+      BibleBook(number: 60, name: "1 Peter", testament: "New", chapters: 5),
+      BibleBook(number: 61, name: "2 Peter", testament: "New", chapters: 3),
+      BibleBook(number: 62, name: "1 John", testament: "New", chapters: 5),
+      BibleBook(number: 63, name: "2 John", testament: "New", chapters: 1),
+      BibleBook(number: 64, name: "3 John", testament: "New", chapters: 1),
+      BibleBook(number: 65, name: "Jude", testament: "New", chapters: 1),
+      BibleBook(number: 66, name: "Revelation", testament: "New", chapters: 22),
+    ];
+
+    filteredBooks = allBooks;
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favoritesJson = prefs.getStringList('favorite_bible_books') ?? [];
+      setState(() {
+        favoriteBooks = favoritesJson.toSet();
+      });
+    } catch (e) {
+      print('Error loading favorites: $e');
+    }
+  }
+
+  Future<void> _saveFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('favorite_bible_books', favoriteBooks.toList());
+    } catch (e) {
+      print('Error saving favorites: $e');
+    }
+  }
+
+  void _toggleFavorite(BibleBook book) {
+    setState(() {
+      if (favoriteBooks.contains(book.name)) {
+        favoriteBooks.remove(book.name);
+      } else {
+        favoriteBooks.add(book.name);
+      }
+    });
+    _saveFavorites();
+
+    // Show feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          favoriteBooks.contains(book.name)
+              ? '${book.name} added to favorites'
+              : '${book.name} removed from favorites',
+        ),
+        duration: const Duration(seconds: 1),
+        backgroundColor: favoriteBooks.contains(book.name)
+            ? Colors.green
+            : Colors.orange,
+      ),
+    );
+  }
+
+  List<BibleBook> get favoriteBooksList {
+    return allBooks.where((book) => favoriteBooks.contains(book.name)).toList();
+  }
+
+  List<BibleBook> get oldTestamentBooks {
+    final books = searchQuery.isEmpty ? allBooks : filteredBooks;
+    return books.where((book) => book.testament == "Old").toList();
+  }
+
+  List<BibleBook> get newTestamentBooks {
+    final books = searchQuery.isEmpty ? allBooks : filteredBooks;
+    return books.where((book) => book.testament == "New").toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF1E1E1E),
+        body: Center(
+          child: CircularProgressIndicator(color: Colors.amber),
+        ),
+      );
+    }
+
     return Scaffold(
+      backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
-        title: Text('📖 ${BibleDatabaseService.currentTranslation} Bible'),
+        title: const Text("📖 Bible"),
         backgroundColor: Colors.black,
-        bottom: isDatabaseAvailable
-            ? TabBar(
+        bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.amber,
+          labelColor: Colors.amber,
+          unselectedLabelColor: Colors.white70,
           tabs: const [
-            Tab(text: 'Books'),
-            Tab(text: 'Search'),
-            Tab(text: 'Settings'),
-          ],
-        )
-            : null,
-        actions: [
-          if (isDatabaseAvailable)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _initializeBible,
-              tooltip: 'Refresh',
-            ),
-        ],
-      ),
-      backgroundColor: const Color(0xFF1E1E1E),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-          : !isDatabaseAvailable
-          ? _buildDownloadPrompt()
-          : TabBarView(
-        controller: _tabController,
-        children: [
-          _buildBooksTab(),
-          const BibleSearchWidget(),
-          const BibleSettingsWidget(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDownloadPrompt() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.download_rounded,
-              size: 80,
-              color: Colors.amber,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              errorMessage ?? 'Bible Not Available',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              errorMessage != null
-                  ? 'There was an issue loading the Bible database. Try downloading a translation below.'
-                  : 'Download a Bible translation to start reading offline.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: () async {
-                final result = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(builder: (_) => const BibleDownloadPage()),
-                );
-                // Refresh when returning from download page
-                if (result == true || result == null) {
-                  _initializeBible();
-                }
-              },
-              icon: const Icon(Icons.download),
-              label: const Text('Download Bible Translations'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
-            if (errorMessage != null) ...[
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _initializeBible,
-                child: const Text(
-                  'Try Again',
-                  style: TextStyle(color: Colors.amber),
-                ),
-              ),
-            ],
+            Tab(text: "All Books"),
+            Tab(text: "Favorites"),
+            Tab(text: "Search"),
           ],
         ),
       ),
+      body: Column(
+        children: [
+          // Search Bar (visible on all tabs)
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: _searchController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Search Bible books...',
+                hintStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                suffixIcon: searchQuery.isNotEmpty
+                    ? IconButton(
+                  icon: const Icon(Icons.clear, color: Colors.white54),
+                  onPressed: () {
+                    _searchController.clear();
+                  },
+                )
+                    : null,
+                filled: true,
+                fillColor: Colors.grey[800],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+
+          // Tab Content
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildAllBooksTab(),
+                _buildFavoritesTab(),
+                _buildSearchTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBooksTab() {
-    if (books.isEmpty) {
+  Widget _buildAllBooksTab() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Old Testament Section
+          _buildTestamentSection("Old Testament", oldTestamentBooks),
+
+          // New Testament Section
+          _buildTestamentSection("New Testament", newTestamentBooks),
+
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFavoritesTab() {
+    final favorites = favoriteBooksList;
+
+    if (favorites.isEmpty) {
       return const Center(
-        child: Text(
-          'No books found in current translation',
-          style: TextStyle(color: Colors.white54),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.favorite_border,
+              size: 80,
+              color: Colors.white30,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'No favorite books yet',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white54,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Tap the heart icon on any book to add it to favorites',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white38,
+              ),
+            ),
+          ],
         ),
       );
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: books.length,
+      itemCount: favorites.length,
       itemBuilder: (context, index) {
-        final book = books[index];
-        return Card(
-          color: const Color(0xFF2D2D2D),
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.amber,
-              child: Text(
-                '${book.id}',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            title: Text(
-              book.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => BibleBookPage(book: book),
-                ),
-              );
-            },
-          ),
-        );
+        final book = favorites[index];
+        return _buildBookCard(book, showTestament: true);
       },
     );
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  Widget _buildSearchTab() {
+    if (searchQuery.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search,
+              size: 80,
+              color: Colors.white30,
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Search for Bible books',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white54,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Type in the search box above to find specific books',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white38,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (filteredBooks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.search_off,
+              size: 80,
+              color: Colors.white30,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No books found for "$searchQuery"',
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.white54,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Try a different search term',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white38,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: filteredBooks.length,
+      itemBuilder: (context, index) {
+        final book = filteredBooks[index];
+        return _buildBookCard(book, showTestament: true);
+      },
+    );
+  }
+
+  Widget _buildTestamentSection(String title, List<BibleBook> books) {
+    if (books.isEmpty) return const SizedBox();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '(${books.length} books)',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.white54,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: books.length,
+          itemBuilder: (context, index) {
+            return _buildBookCard(books[index]);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookCard(BibleBook book, {bool showTestament = false}) {
+    final isFavorite = favoriteBooks.contains(book.name);
+
+    return Card(
+      color: const Color(0xFF2D2D2D),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: book.testament == "Old" ? Colors.blue[600] : Colors.green[600],
+          child: Text(
+            book.number.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        title: Text(
+          book.name,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showTestament) ...[
+              Text(
+                '${book.testament} Testament',
+                style: TextStyle(
+                  color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+            ],
+            Text(
+              '${book.chapters} ${book.chapters == 1 ? 'chapter' : 'chapters'}',
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? Colors.red : Colors.white54,
+              ),
+              onPressed: () => _toggleFavorite(book),
+              tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white54),
+          ],
+        ),
+        onTap: () {
+          // Navigate to book chapters or reading page
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => BibleBookPage(book: book),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -4388,9 +4866,66 @@ class BibleBookPage extends StatefulWidget {
   final BibleBook book;
 
   const BibleBookPage({super.key, required this.book});
-
   @override
   State<BibleBookPage> createState() => _BibleBookPageState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(book.name),
+        backgroundColor: Colors.black,
+      ),
+      backgroundColor: const Color(0xFF1E1E1E),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.menu_book,
+              size: 80,
+              color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              book.name,
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${book.testament} Testament',
+              style: TextStyle(
+                fontSize: 16,
+                color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${book.chapters} ${book.chapters == 1 ? 'Chapter' : 'Chapters'}',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 40),
+            const Text(
+              'Chapter selection and Bible text\nwould be implemented here',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.white54,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _BibleBookPageState extends State<BibleBookPage> {
@@ -5138,10 +5673,32 @@ class _BibleSettingsWidgetState extends State<BibleSettingsWidget> {
 // You'll need to add these model classes and services
 
 class BibleBook {
-  final int id;
+  final int number;
   final String name;
+  final String testament;
+  final int chapters;
+  final String id;
 
-  BibleBook({required this.id, required this.name});
+  const BibleBook({
+    required this.number,
+    required this.name,
+    required this.testament,
+    required this.chapters,
+  }) : id = name;
+
+  Map<String, dynamic> toJson() => {
+    'number': number,
+    'name': name,
+    'testament': testament,
+    'chapters': chapters,
+  };
+
+  factory BibleBook.fromJson(Map<String, dynamic> json) => BibleBook(
+    number: json['number'],
+    name: json['name'],
+    testament: json['testament'],
+    chapters: json['chapters'],
+  );
 }
 
 class BibleVerse {
