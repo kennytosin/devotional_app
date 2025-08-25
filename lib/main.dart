@@ -4939,11 +4939,18 @@ class _BibleBookPageState extends State<BibleBookPage> {
   }
 
   Future<void> _loadChapters() async {
-    final chaptersList = await BibleDatabaseService.getChapters(widget.book.id);
-    setState(() {
-      chapters = chaptersList;
-      isLoading = false;
-    });
+    try {
+      // Convert string ID to int if needed, or adjust your database service
+      final bookId = int.tryParse(widget.book.id) ?? 0; // Convert String to int
+      final chaptersList = await BibleDatabaseService.getChapters(bookId); // Use int instead of String
+      setState(() {
+        chapters = chaptersList;
+        isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading chapters: $e');
+      setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -5691,6 +5698,7 @@ class BibleBook {
     'name': name,
     'testament': testament,
     'chapters': chapters,
+    'id': id,
   };
 
   factory BibleBook.fromJson(Map<String, dynamic> json) => BibleBook(
