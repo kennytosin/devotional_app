@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:intl/intl.dart';
-import 'package:carousel_slider/carousel_slider.dart';
+// import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -2389,19 +2389,21 @@ class _AddDevotionalPageState extends State<AddDevotionalPage> {
         date: _selectedDate,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Devotional added!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Devotional added!')),
+        );
 
-      await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 500));
 
-      _titleController.clear();
-      _contentController.clear();
-      setState(() {
-        _selectedDate = DateTime.now();
-      });
+        _titleController.clear();
+        _contentController.clear();
+        setState(() {
+          _selectedDate = DateTime.now();
+        });
 
-      Navigator.pop(context);
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -4355,8 +4357,8 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
 
-  List<BibleBook> allBooks = [];
-  List<BibleBook> filteredBooks = [];
+  List<Map<String, dynamic>> allBooks = [];
+  List<Map<String, dynamic>> filteredBooks = [];
   Set<String> favoriteBooks = {};
   String searchQuery = '';
   bool isLoading = true;
@@ -4390,83 +4392,83 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
       filteredBooks = allBooks;
     } else {
       filteredBooks = allBooks.where((book) {
-        return book.name.toLowerCase().contains(searchQuery.toLowerCase());
+        return book['name'].toLowerCase().contains(searchQuery.toLowerCase());
       }).toList();
     }
   }
 
-  // Complete list of Bible books (66 books total)
+  // Complete list of Bible books (66 books total) - Fixed the issue!
   void _initializeBibleBooks() {
-    allBooks = const [
+    allBooks = [
       // Old Testament (39 books)
-      BibleBook(number: 1, name: "Genesis", testament: "Old", chapters: 50),
-      BibleBook(number: 2, name: "Exodus", testament: "Old", chapters: 40),
-      BibleBook(number: 3, name: "Leviticus", testament: "Old", chapters: 27),
-      BibleBook(number: 4, name: "Numbers", testament: "Old", chapters: 36),
-      BibleBook(number: 5, name: "Deuteronomy", testament: "Old", chapters: 34),
-      BibleBook(number: 6, name: "Joshua", testament: "Old", chapters: 24),
-      BibleBook(number: 7, name: "Judges", testament: "Old", chapters: 21),
-      BibleBook(number: 8, name: "Ruth", testament: "Old", chapters: 4),
-      BibleBook(number: 9, name: "1 Samuel", testament: "Old", chapters: 31),
-      BibleBook(number: 10, name: "2 Samuel", testament: "Old", chapters: 24),
-      BibleBook(number: 11, name: "1 Kings", testament: "Old", chapters: 22),
-      BibleBook(number: 12, name: "2 Kings", testament: "Old", chapters: 25),
-      BibleBook(number: 13, name: "1 Chronicles", testament: "Old", chapters: 29),
-      BibleBook(number: 14, name: "2 Chronicles", testament: "Old", chapters: 36),
-      BibleBook(number: 15, name: "Ezra", testament: "Old", chapters: 10),
-      BibleBook(number: 16, name: "Nehemiah", testament: "Old", chapters: 13),
-      BibleBook(number: 17, name: "Esther", testament: "Old", chapters: 10),
-      BibleBook(number: 18, name: "Job", testament: "Old", chapters: 42),
-      BibleBook(number: 19, name: "Psalms", testament: "Old", chapters: 150),
-      BibleBook(number: 20, name: "Proverbs", testament: "Old", chapters: 31),
-      BibleBook(number: 21, name: "Ecclesiastes", testament: "Old", chapters: 12),
-      BibleBook(number: 22, name: "Song of Solomon", testament: "Old", chapters: 8),
-      BibleBook(number: 23, name: "Isaiah", testament: "Old", chapters: 66),
-      BibleBook(number: 24, name: "Jeremiah", testament: "Old", chapters: 52),
-      BibleBook(number: 25, name: "Lamentations", testament: "Old", chapters: 5),
-      BibleBook(number: 26, name: "Ezekiel", testament: "Old", chapters: 48),
-      BibleBook(number: 27, name: "Daniel", testament: "Old", chapters: 12),
-      BibleBook(number: 28, name: "Hosea", testament: "Old", chapters: 14),
-      BibleBook(number: 29, name: "Joel", testament: "Old", chapters: 3),
-      BibleBook(number: 30, name: "Amos", testament: "Old", chapters: 9),
-      BibleBook(number: 31, name: "Obadiah", testament: "Old", chapters: 1),
-      BibleBook(number: 32, name: "Jonah", testament: "Old", chapters: 4),
-      BibleBook(number: 33, name: "Micah", testament: "Old", chapters: 7),
-      BibleBook(number: 34, name: "Nahum", testament: "Old", chapters: 3),
-      BibleBook(number: 35, name: "Habakkuk", testament: "Old", chapters: 3),
-      BibleBook(number: 36, name: "Zephaniah", testament: "Old", chapters: 3),
-      BibleBook(number: 37, name: "Haggai", testament: "Old", chapters: 2),
-      BibleBook(number: 38, name: "Zechariah", testament: "Old", chapters: 14),
-      BibleBook(number: 39, name: "Malachi", testament: "Old", chapters: 4),
+      {'number': 1, 'name': 'Genesis', 'testament': 'Old', 'chapters': 50},
+      {'number': 2, 'name': 'Exodus', 'testament': 'Old', 'chapters': 40},
+      {'number': 3, 'name': 'Leviticus', 'testament': 'Old', 'chapters': 27},
+      {'number': 4, 'name': 'Numbers', 'testament': 'Old', 'chapters': 36},
+      {'number': 5, 'name': 'Deuteronomy', 'testament': 'Old', 'chapters': 34},
+      {'number': 6, 'name': 'Joshua', 'testament': 'Old', 'chapters': 24},
+      {'number': 7, 'name': 'Judges', 'testament': 'Old', 'chapters': 21},
+      {'number': 8, 'name': 'Ruth', 'testament': 'Old', 'chapters': 4},
+      {'number': 9, 'name': '1 Samuel', 'testament': 'Old', 'chapters': 31},
+      {'number': 10, 'name': '2 Samuel', 'testament': 'Old', 'chapters': 24},
+      {'number': 11, 'name': '1 Kings', 'testament': 'Old', 'chapters': 22},
+      {'number': 12, 'name': '2 Kings', 'testament': 'Old', 'chapters': 25},
+      {'number': 13, 'name': '1 Chronicles', 'testament': 'Old', 'chapters': 29},
+      {'number': 14, 'name': '2 Chronicles', 'testament': 'Old', 'chapters': 36},
+      {'number': 15, 'name': 'Ezra', 'testament': 'Old', 'chapters': 10},
+      {'number': 16, 'name': 'Nehemiah', 'testament': 'Old', 'chapters': 13},
+      {'number': 17, 'name': 'Esther', 'testament': 'Old', 'chapters': 10},
+      {'number': 18, 'name': 'Job', 'testament': 'Old', 'chapters': 42},
+      {'number': 19, 'name': 'Psalms', 'testament': 'Old', 'chapters': 150},
+      {'number': 20, 'name': 'Proverbs', 'testament': 'Old', 'chapters': 31},
+      {'number': 21, 'name': 'Ecclesiastes', 'testament': 'Old', 'chapters': 12},
+      {'number': 22, 'name': 'Song of Solomon', 'testament': 'Old', 'chapters': 8},
+      {'number': 23, 'name': 'Isaiah', 'testament': 'Old', 'chapters': 66},
+      {'number': 24, 'name': 'Jeremiah', 'testament': 'Old', 'chapters': 52},
+      {'number': 25, 'name': 'Lamentations', 'testament': 'Old', 'chapters': 5},
+      {'number': 26, 'name': 'Ezekiel', 'testament': 'Old', 'chapters': 48},
+      {'number': 27, 'name': 'Daniel', 'testament': 'Old', 'chapters': 12},
+      {'number': 28, 'name': 'Hosea', 'testament': 'Old', 'chapters': 14},
+      {'number': 29, 'name': 'Joel', 'testament': 'Old', 'chapters': 3},
+      {'number': 30, 'name': 'Amos', 'testament': 'Old', 'chapters': 9},
+      {'number': 31, 'name': 'Obadiah', 'testament': 'Old', 'chapters': 1},
+      {'number': 32, 'name': 'Jonah', 'testament': 'Old', 'chapters': 4},
+      {'number': 33, 'name': 'Micah', 'testament': 'Old', 'chapters': 7},
+      {'number': 34, 'name': 'Nahum', 'testament': 'Old', 'chapters': 3},
+      {'number': 35, 'name': 'Habakkuk', 'testament': 'Old', 'chapters': 3},
+      {'number': 36, 'name': 'Zephaniah', 'testament': 'Old', 'chapters': 3},
+      {'number': 37, 'name': 'Haggai', 'testament': 'Old', 'chapters': 2},
+      {'number': 38, 'name': 'Zechariah', 'testament': 'Old', 'chapters': 14},
+      {'number': 39, 'name': 'Malachi', 'testament': 'Old', 'chapters': 4},
 
-      // New Testament (27 books)
-      BibleBook(number: 40, name: "Matthew", testament: "New", chapters: 28),
-      BibleBook(number: 41, name: "Mark", testament: "New", chapters: 16),
-      BibleBook(number: 42, name: "Luke", testament: "New", chapters: 24),
-      BibleBook(number: 43, name: "John", testament: "New", chapters: 21),
-      BibleBook(number: 44, name: "Acts", testament: "New", chapters: 28),
-      BibleBook(number: 45, name: "Romans", testament: "New", chapters: 16),
-      BibleBook(number: 46, name: "1 Corinthians", testament: "New", chapters: 16),
-      BibleBook(number: 47, name: "2 Corinthians", testament: "New", chapters: 13),
-      BibleBook(number: 48, name: "Galatians", testament: "New", chapters: 6),
-      BibleBook(number: 49, name: "Ephesians", testament: "New", chapters: 6),
-      BibleBook(number: 50, name: "Philippians", testament: "New", chapters: 4),
-      BibleBook(number: 51, name: "Colossians", testament: "New", chapters: 4),
-      BibleBook(number: 52, name: "1 Thessalonians", testament: "New", chapters: 5),
-      BibleBook(number: 53, name: "2 Thessalonians", testament: "New", chapters: 3),
-      BibleBook(number: 54, name: "1 Timothy", testament: "New", chapters: 6),
-      BibleBook(number: 55, name: "2 Timothy", testament: "New", chapters: 4),
-      BibleBook(number: 56, name: "Titus", testament: "New", chapters: 3),
-      BibleBook(number: 57, name: "Philemon", testament: "New", chapters: 1),
-      BibleBook(number: 58, name: "Hebrews", testament: "New", chapters: 13),
-      BibleBook(number: 59, name: "James", testament: "New", chapters: 5),
-      BibleBook(number: 60, name: "1 Peter", testament: "New", chapters: 5),
-      BibleBook(number: 61, name: "2 Peter", testament: "New", chapters: 3),
-      BibleBook(number: 62, name: "1 John", testament: "New", chapters: 5),
-      BibleBook(number: 63, name: "2 John", testament: "New", chapters: 1),
-      BibleBook(number: 64, name: "3 John", testament: "New", chapters: 1),
-      BibleBook(number: 65, name: "Jude", testament: "New", chapters: 1),
-      BibleBook(number: 66, name: "Revelation", testament: "New", chapters: 22),
+      // New Testament (27 books) - This is where your original code went wrong!
+      {'number': 40, 'name': 'Matthew', 'testament': 'New', 'chapters': 28},
+      {'number': 41, 'name': 'Mark', 'testament': 'New', 'chapters': 16},
+      {'number': 42, 'name': 'Luke', 'testament': 'New', 'chapters': 24},
+      {'number': 43, 'name': 'John', 'testament': 'New', 'chapters': 21},
+      {'number': 44, 'name': 'Acts', 'testament': 'New', 'chapters': 28},
+      {'number': 45, 'name': 'Romans', 'testament': 'New', 'chapters': 16},
+      {'number': 46, 'name': '1 Corinthians', 'testament': 'New', 'chapters': 16},
+      {'number': 47, 'name': '2 Corinthians', 'testament': 'New', 'chapters': 13},
+      {'number': 48, 'name': 'Galatians', 'testament': 'New', 'chapters': 6},
+      {'number': 49, 'name': 'Ephesians', 'testament': 'New', 'chapters': 6},
+      {'number': 50, 'name': 'Philippians', 'testament': 'New', 'chapters': 4},
+      {'number': 51, 'name': 'Colossians', 'testament': 'New', 'chapters': 4},
+      {'number': 52, 'name': '1 Thessalonians', 'testament': 'New', 'chapters': 5},
+      {'number': 53, 'name': '2 Thessalonians', 'testament': 'New', 'chapters': 3},
+      {'number': 54, 'name': '1 Timothy', 'testament': 'New', 'chapters': 6},
+      {'number': 55, 'name': '2 Timothy', 'testament': 'New', 'chapters': 4},
+      {'number': 56, 'name': 'Titus', 'testament': 'New', 'chapters': 3},
+      {'number': 57, 'name': 'Philemon', 'testament': 'New', 'chapters': 1},
+      {'number': 58, 'name': 'Hebrews', 'testament': 'New', 'chapters': 13},
+      {'number': 59, 'name': 'James', 'testament': 'New', 'chapters': 5},
+      {'number': 60, 'name': '1 Peter', 'testament': 'New', 'chapters': 5},
+      {'number': 61, 'name': '2 Peter', 'testament': 'New', 'chapters': 3},
+      {'number': 62, 'name': '1 John', 'testament': 'New', 'chapters': 5},
+      {'number': 63, 'name': '2 John', 'testament': 'New', 'chapters': 1},
+      {'number': 64, 'name': '3 John', 'testament': 'New', 'chapters': 1},
+      {'number': 65, 'name': 'Jude', 'testament': 'New', 'chapters': 1},
+      {'number': 66, 'name': 'Revelation', 'testament': 'New', 'chapters': 22}, // STOPS HERE!
     ];
 
     filteredBooks = allBooks;
@@ -4496,12 +4498,12 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
     }
   }
 
-  void _toggleFavorite(BibleBook book) {
+  void _toggleFavorite(Map<String, dynamic> book) {
     setState(() {
-      if (favoriteBooks.contains(book.name)) {
-        favoriteBooks.remove(book.name);
+      if (favoriteBooks.contains(book['name'])) {
+        favoriteBooks.remove(book['name']);
       } else {
-        favoriteBooks.add(book.name);
+        favoriteBooks.add(book['name']);
       }
     });
     _saveFavorites();
@@ -4510,30 +4512,30 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          favoriteBooks.contains(book.name)
-              ? '${book.name} added to favorites'
-              : '${book.name} removed from favorites',
+          favoriteBooks.contains(book['name'])
+              ? '${book['name']} added to favorites'
+              : '${book['name']} removed from favorites',
         ),
         duration: const Duration(seconds: 1),
-        backgroundColor: favoriteBooks.contains(book.name)
+        backgroundColor: favoriteBooks.contains(book['name'])
             ? Colors.green
             : Colors.orange,
       ),
     );
   }
 
-  List<BibleBook> get favoriteBooksList {
-    return allBooks.where((book) => favoriteBooks.contains(book.name)).toList();
+  List<Map<String, dynamic>> get favoriteBooksList {
+    return allBooks.where((book) => favoriteBooks.contains(book['name'])).toList();
   }
 
-  List<BibleBook> get oldTestamentBooks {
+  List<Map<String, dynamic>> get oldTestamentBooks {
     final books = searchQuery.isEmpty ? allBooks : filteredBooks;
-    return books.where((book) => book.testament == "Old").toList();
+    return books.where((book) => book['testament'] == 'Old').toList();
   }
 
-  List<BibleBook> get newTestamentBooks {
+  List<Map<String, dynamic>> get newTestamentBooks {
     final books = searchQuery.isEmpty ? allBooks : filteredBooks;
-    return books.where((book) => book.testament == "New").toList();
+    return books.where((book) => book['testament'] == 'New').toList();
   }
 
   @override
@@ -4747,7 +4749,7 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTestamentSection(String title, List<BibleBook> books) {
+  Widget _buildTestamentSection(String title, List<Map<String, dynamic>> books) {
     if (books.isEmpty) return const SizedBox();
 
     return Column(
@@ -4789,17 +4791,17 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildBookCard(BibleBook book, {bool showTestament = false}) {
-    final isFavorite = favoriteBooks.contains(book.name);
+  Widget _buildBookCard(Map<String, dynamic> book, {bool showTestament = false}) {
+    final isFavorite = favoriteBooks.contains(book['name']);
 
     return Card(
       color: const Color(0xFF2D2D2D),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: book.testament == "Old" ? Colors.blue[600] : Colors.green[600],
+          backgroundColor: book['testament'] == 'Old' ? Colors.blue[600] : Colors.green[600],
           child: Text(
-            book.number.toString(),
+            book['number'].toString(),
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
@@ -4808,7 +4810,7 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
           ),
         ),
         title: Text(
-          book.name,
+          book['name'],
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -4819,16 +4821,16 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
           children: [
             if (showTestament) ...[
               Text(
-                '${book.testament} Testament',
+                '${book['testament']} Testament',
                 style: TextStyle(
-                  color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+                  color: book['testament'] == 'Old' ? Colors.blue[300] : Colors.green[300],
                   fontSize: 12,
                 ),
               ),
               const SizedBox(height: 2),
             ],
             Text(
-              '${book.chapters} ${book.chapters == 1 ? 'chapter' : 'chapters'}',
+              '${book['chapters']} ${book['chapters'] == 1 ? 'chapter' : 'chapters'}',
               style: const TextStyle(color: Colors.white70),
             ),
           ],
@@ -4863,17 +4865,20 @@ class _BiblePageState extends State<BiblePage> with TickerProviderStateMixin {
 
 // ------------------------- BIBLE BOOK PAGE -------------------------
 class BibleBookPage extends StatefulWidget {
-  final BibleBook book;
+  final Map<String, dynamic> book;
 
   const BibleBookPage({super.key, required this.book});
+
   @override
   State<BibleBookPage> createState() => _BibleBookPageState();
+}
 
+class _BibleBookPageState extends State<BibleBookPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(book.name),
+        title: Text(widget.book['name']),
         backgroundColor: Colors.black,
       ),
       backgroundColor: const Color(0xFF1E1E1E),
@@ -4884,11 +4889,11 @@ class BibleBookPage extends StatefulWidget {
             Icon(
               Icons.menu_book,
               size: 80,
-              color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+              color: widget.book['testament'] == 'Old' ? Colors.blue[300] : Colors.green[300],
             ),
             const SizedBox(height: 20),
             Text(
-              book.name,
+              widget.book['name'],
               style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -4897,15 +4902,15 @@ class BibleBookPage extends StatefulWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${book.testament} Testament',
+              '${widget.book['testament']} Testament',
               style: TextStyle(
                 fontSize: 16,
-                color: book.testament == "Old" ? Colors.blue[300] : Colors.green[300],
+                color: widget.book['testament'] == 'Old' ? Colors.blue[300] : Colors.green[300],
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              '${book.chapters} ${book.chapters == 1 ? 'Chapter' : 'Chapters'}',
+              '${widget.book['chapters']} ${widget.book['chapters'] == 1 ? 'Chapter' : 'Chapters'}',
               style: const TextStyle(
                 fontSize: 16,
                 color: Colors.white70,
@@ -4922,90 +4927,6 @@ class BibleBookPage extends StatefulWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BibleBookPageState extends State<BibleBookPage> {
-  List<int> chapters = [];
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadChapters();
-  }
-
-  Future<void> _loadChapters() async {
-    try {
-      // Convert string ID to int if needed, or adjust your database service
-      final bookId = int.tryParse(widget.book.id) ?? 0; // Convert String to int
-      final chaptersList = await BibleDatabaseService.getChapters(bookId); // Use int instead of String
-      setState(() {
-        chapters = chaptersList;
-        isLoading = false;
-      });
-    } catch (e) {
-      print('Error loading chapters: $e');
-      setState(() => isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.book.name),
-        backgroundColor: Colors.black,
-      ),
-      backgroundColor: const Color(0xFF1E1E1E),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.amber))
-          : Padding(
-        padding: const EdgeInsets.all(16),
-        child: GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 1.2,
-          ),
-          itemCount: chapters.length,
-          itemBuilder: (context, index) {
-            final chapter = chapters[index];
-            return GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => BibleChapterPage(
-                      book: widget.book,
-                      chapter: chapter,
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2D2D2D),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                ),
-                child: Center(
-                  child: Text(
-                    chapter.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
         ),
       ),
     );
@@ -5037,7 +4958,7 @@ class _BibleChapterPageState extends State<BibleChapterPage> {
 
   Future<void> _loadVerses() async {
     final versesList = await BibleDatabaseService.getChapterVerses(
-      widget.book.id,
+      widget.book.id as int,
       widget.chapter,
     );
     setState(() {
@@ -5199,7 +5120,7 @@ class _BibleSearchWidgetState extends State<BibleSearchWidget> {
   Future<void> _loadBooks() async {
     final books = await BibleDatabaseService.getBooks();
     setState(() {
-      booksMap = {for (var book in books) book.id: book};
+      booksMap = {for (var book in books) book.id as int: book};
     });
   }
 
