@@ -4958,7 +4958,7 @@ class _BibleChapterPageState extends State<BibleChapterPage> {
 
   Future<void> _loadVerses() async {
     final versesList = await BibleDatabaseService.getChapterVerses(
-      widget.book.id as int,
+      widget.book.id ?? 0,
       widget.chapter,
     );
     setState(() {
@@ -5120,7 +5120,7 @@ class _BibleSearchWidgetState extends State<BibleSearchWidget> {
   Future<void> _loadBooks() async {
     final books = await BibleDatabaseService.getBooks();
     setState(() {
-      booksMap = {for (var book in books) book.id as int: book};
+      booksMap = {for (var book in books) book.id ?? 0: book};
     });
   }
 
@@ -5601,32 +5601,34 @@ class _BibleSettingsWidgetState extends State<BibleSettingsWidget> {
 // You'll need to add these model classes and services
 
 class BibleBook {
+  final int? id; // Make nullable to handle cases where id might not be available
   final int number;
   final String name;
   final String testament;
   final int chapters;
-  final String id;
 
   const BibleBook({
+    this.id,
     required this.number,
     required this.name,
     required this.testament,
     required this.chapters,
-  }) : id = name;
+  });
 
   Map<String, dynamic> toJson() => {
+    'id': id,
     'number': number,
     'name': name,
     'testament': testament,
     'chapters': chapters,
-    'id': id,
   };
 
   factory BibleBook.fromJson(Map<String, dynamic> json) => BibleBook(
-    number: json['number'],
-    name: json['name'],
-    testament: json['testament'],
-    chapters: json['chapters'],
+    id: json['id'] as int?,
+    number: json['number'] as int? ?? 0,
+    name: json['name'] as String? ?? '',
+    testament: json['testament'] as String? ?? '',
+    chapters: json['chapters'] as int? ?? 0,
   );
 }
 
@@ -5649,6 +5651,21 @@ class BibleVerse {
 class BibleDatabaseService {
   static String currentTranslation = 'KJV';
   static Database? _currentDatabase;
+
+  static int _getChapterCount(int bookId) {
+    const chapterCounts = [
+      0, // placeholder for index 0
+      50, 40, 27, 36, 34, 24, 21, 4, 31, 24, // 1-10 (Genesis - 2 Samuel)
+      22, 25, 29, 36, 10, 13, 10, 42, 150, 31, // 11-20 (1 Kings - Proverbs)
+      12, 8, 66, 52, 5, 48, 12, 14, 3, 9, // 21-30 (Ecclesiastes - Amos)
+      1, 4, 7, 3, 3, 3, 2, 14, 4, 28, // 31-40 (Obadiah - Matthew)
+      16, 24, 21, 28, 16, 16, 13, 6, 6, 4, // 41-50 (Mark - Philippians)
+      4, 5, 3, 6, 4, 3, 1, 13, 5, 5, // 51-60 (Colossians - 1 Peter)
+      3, 5, 1, 1, 1, 22 // 61-66 (2 Peter - Revelation)
+    ];
+
+    return (bookId > 0 && bookId < chapterCounts.length) ? chapterCounts[bookId] : 1;
+  }
 
   static final Map<String, String> availableTranslations = {
     'KJV': 'King James Version',
@@ -5870,6 +5887,9 @@ class BibleDatabaseService {
               return {
                 'id': id,
                 'name': _getBookName(id),
+                'number': id,
+                'testament': id <= 39 ? 'Old' : 'New',
+                'chapters': _getChapterCount(id),
               };
             }).toList();
           } catch (e) {
@@ -5884,8 +5904,17 @@ class BibleDatabaseService {
             row['book_name'] as String? ??
             row['title'] as String? ??
             _getBookName(id);
+        final number = row['number'] as int? ?? id;
+        final testament = row['testament'] as String? ?? (id <= 39 ? 'Old' : 'New');
+        final chapters = row['chapters'] as int? ?? _getChapterCount(id);
 
-        return BibleBook(id: id, name: name);
+        return BibleBook(
+          id: id,
+          number: number,
+          name: name,
+          testament: testament,
+          chapters: chapters,
+        );
       }).toList();
 
     } catch (e) {
